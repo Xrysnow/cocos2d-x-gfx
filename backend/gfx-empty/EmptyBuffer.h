@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2020-2021 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2020-2022 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
@@ -32,12 +32,12 @@ namespace gfx {
 
 class CC_DLL EmptyBuffer final : public Buffer {
 public:
-    void update(const void *buffer, uint size, uint offset = 0) override;
+    void update(const void *buffer, uint32_t size, uint32_t offset = 0) override;
 
 protected:
     void doInit(const BufferInfo &info) override;
     void doInit(const BufferViewInfo &info) override;
-    void doResize(uint size, uint count) override;
+    void doResize(uint32_t size, uint32_t count) override;
     void doDestroy() override;
 };
 

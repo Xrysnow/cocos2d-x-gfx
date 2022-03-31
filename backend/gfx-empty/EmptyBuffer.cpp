@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2020-2021 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2020-2022 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
@@ -34,13 +34,13 @@ void EmptyBuffer::doInit(const BufferInfo &info) {
 void EmptyBuffer::doInit(const BufferViewInfo &info) {
 }
 
-void EmptyBuffer::doResize(uint size, uint count) {
+void EmptyBuffer::doResize(uint32_t size, uint32_t count) {
 }
 
 void EmptyBuffer::doDestroy() {
 }
 
-void EmptyBuffer::update(const void *buffer, uint size, uint offset) {
+void EmptyBuffer::update(const void *buffer, uint32_t size, uint32_t offset) {
 }
 
 } // namespace gfx
