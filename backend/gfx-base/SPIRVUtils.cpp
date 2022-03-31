@@ -56,6 +56,7 @@ EShLanguage getShaderStage(ShaderStageFlagBit type) {
 }
 
 glslang::EShTargetClientVersion getClientVersion(int vulkanMinorVersion) {
+    vulkanMinorVersion = std::min(vulkanMinorVersion, 2);
     switch (vulkanMinorVersion) {
         case 0: return glslang::EShTargetVulkan_1_0;
         case 1: return glslang::EShTargetVulkan_1_1;
@@ -68,6 +69,7 @@ glslang::EShTargetClientVersion getClientVersion(int vulkanMinorVersion) {
 }
 
 glslang::EShTargetLanguageVersion getTargetVersion(int vulkanMinorVersion) {
+    vulkanMinorVersion = std::min(vulkanMinorVersion, 2);
     switch (vulkanMinorVersion) {
         case 0: return glslang::EShTargetSpv_1_0;
         case 1: return glslang::EShTargetSpv_1_3;
