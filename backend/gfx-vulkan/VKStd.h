@@ -50,7 +50,16 @@
                 CCASSERT(false, "Vulkan Error");                       \
             }                                                          \
         } while (0)
+	#define VK_CHECK_LOG(x)                                            \
+        do {                                                           \
+            VkResult err = x;                                          \
+            if (err) {                                                 \
+                CC_LOG_ERROR("%s: %s returned Vulkan error: %d",       \
+					__FUNCTION__, #x, err);                            \
+            }                                                          \
+        } while (0)
 
 #else
     #define VK_CHECK(x) x
+    #define VK_CHECK_LOG(x) x
 #endif

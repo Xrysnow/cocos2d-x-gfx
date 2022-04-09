@@ -98,7 +98,7 @@ void CCVKQueue::submit(CommandBuffer *const *cmdBuffs, uint32_t count) {
     submitInfo.pSignalSemaphores    = &signal;
 
     VkFence vkFence = device->gpuFencePool()->alloc();
-    VK_CHECK(vkQueueSubmit(_gpuQueue->vkQueue, 1, &submitInfo, vkFence));
+    VK_CHECK_LOG(vkQueueSubmit(_gpuQueue->vkQueue, 1, &submitInfo, vkFence));
 
     _gpuQueue->lastSignaledSemaphores.assign(1, signal);
 }
