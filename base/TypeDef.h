@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include "Macros.h"
 #include <cstdint>
 
 using uint   = std::uint32_t;
