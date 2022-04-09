@@ -630,6 +630,11 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
         VkSemaphore acquireSemaphore = _gpuSemaphorePool->alloc();
         VkResult    res              = vkAcquireNextImageKHR(_gpuDevice->vkDevice, vkSwapchains[i], ~0ULL,
                                              acquireSemaphore, VK_NULL_HANDLE, &vkSwapchainIndices[i]);
+        if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)
+        {
+            CC_LOG_WARNING("vkAcquireNextImage got %d", (int)res);
+            res = VK_SUCCESS;
+        }
         CCASSERT(res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR, "acquire surface failed");
         gpuSwapchains[i]->curImageIndex = vkSwapchainIndices[i];
         queue->gpuQueue()->lastSignaledSemaphores.push_back(acquireSemaphore);
@@ -674,7 +679,7 @@ void CCVKDevice::present() {
 #else
     auto vkCCPresentFunc = vkQueuePresentKHR;
 #endif
-
+    bool ok = true;
     if (!vkSwapchains.empty()) { // don't present if not acquired
         VkPresentInfoKHR presentInfo{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         presentInfo.waitSemaphoreCount = utils::toUint(queue->gpuQueue()->lastSignaledSemaphores.size());
@@ -686,14 +691,19 @@ void CCVKDevice::present() {
         VkResult res = vkCCPresentFunc(queue->gpuQueue()->vkQueue, &presentInfo);
         for (auto *gpuSwapchain : gpuSwapchains) {
             gpuSwapchain->lastPresentResult = res;
+            VK_CHECK_LOG(gpuSwapchain->lastPresentResult);
+            if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)
+            {
+                ok = false;
+            }
         }
     }
 
     _gpuDevice->curBackBufferIndex = (_gpuDevice->curBackBufferIndex + 1) % _gpuDevice->backBufferCount;
 
     uint32_t fenceCount = gpuFencePool()->size();
-    if (fenceCount) {
-        VK_CHECK(vkWaitForFences(_gpuDevice->vkDevice, fenceCount,
+    if (fenceCount && ok) {
+        VK_CHECK_LOG(vkWaitForFences(_gpuDevice->vkDevice, fenceCount,
                                  gpuFencePool()->data(), VK_TRUE, DEFAULT_TIMEOUT));
     }
 
