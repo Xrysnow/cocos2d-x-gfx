@@ -33,10 +33,10 @@
 #include "gfx-gles3/GLES3GPUObjects.h"
 
 #define BUFFER_OFFSET(idx) (static_cast<char *>(0) + (idx))
-//#ifdef CC_LOG_DEBUG
-//#undef CC_LOG_DEBUG
-//#define CC_LOG_DEBUG(...)
-//#endif
+#ifdef CC_LOG_DEBUG
+#undef CC_LOG_DEBUG
+#define CC_LOG_DEBUG(...)
+#endif
 
 constexpr uint32_t USE_VAO = true;
 
