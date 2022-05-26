@@ -290,7 +290,7 @@ void doBufferTextureCopy(const uint8_t *const *buffers, Texture *texture, const 
     //TODO(PatriceJiang): in C++17 replace with:*allocator = CC_NEW(ThreadSafeLinearAllocator(totalSize));
 #if defined(_HAS_CXX17) && _HAS_CXX17
     auto *allocator = CC_NEW(ThreadSafeLinearAllocator(totalSize));
-#elif
+#else
     auto *allocator = _CC_NEW_T_ALIGN(ThreadSafeLinearAllocator(totalSize), alignof(ThreadSafeLinearAllocator));
 #endif
 
@@ -322,7 +322,7 @@ void doBufferTextureCopy(const uint8_t *const *buffers, Texture *texture, const 
 			// TODO(PatriceJiang): C++17 replace with:  CC_DELETE(allocator);
 			if (allocator) CC_DELETE(allocator);
         });
-#elif
+#else
     ENQUEUE_MESSAGE_6(
         mq, DeviceCopyBuffersToTexture,
         actor, actor,
