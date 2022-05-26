@@ -213,24 +213,9 @@ if(WINDOWS)
     )
 endif()
 
-target_compile_definitions(${target_name} PUBLIC
-    CC_STATIC
-    WIN32
-    _WIN32
-    _WINDOWS
-    NOMINMAX
-    UNICODE
-    _UNICODE
-    _CRT_SECURE_NO_WARNINGS
-    _SCL_SECURE_NO_WARNINGS
-    _USRLIBSIMSTATIC
-    SE_ENABLE_INSPECTOR
-)
+use_cocos2dx_compile_define(${target_name})
+use_cocos2dx_compile_options(${target_name})
 
 if(XCODE OR VS)
     cocos_mark_code_files(${target_name})
-endif()
-
-if(MSVC)
-    target_compile_options(${target_name} PUBLIC /MP)
 endif()
