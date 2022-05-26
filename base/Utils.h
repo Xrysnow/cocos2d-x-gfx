@@ -162,7 +162,7 @@ inline void hash_combine(uint32_t& seed, bool value)
 
 inline size_t hash_range(const void* start, const void* end)
 {
-    const auto diff = (const char*)end - start;
+    const auto diff = (const char*)end - (const char*)start;
     if (sizeof(size_t) == sizeof(uint64_t))
 	{
         return XXH64(start, diff, 0);
