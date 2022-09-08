@@ -43,7 +43,12 @@ set(gfx_src
   base/Log.h
   base/Macros.h
   base/Object.h
+  base/Ptr.h
   base/Random.h
+  base/RefCounted.cpp
+  base/RefCounted.h
+  base/RefMap.h
+  base/RefVector.h
   base/StringHandle.cpp
   base/StringHandle.h
   base/StringPool.h
@@ -55,23 +60,11 @@ set(gfx_src
   base/Utils.cpp
   base/Utils.h
 
-  base/memory/AllocatedObj.cpp
-  base/memory/AllocatedObj.h
   base/memory/CallStack.cpp
   base/memory/CallStack.h
-  base/memory/JeAlloc.cpp
-  base/memory/JeAlloc.h
-  base/memory/MemDef.h
-  base/memory/Memory.cpp
   base/memory/Memory.h
   base/memory/MemoryHook.cpp
   base/memory/MemoryHook.h
-  base/memory/MemTracker.cpp
-  base/memory/MemTracker.h
-  base/memory/NedPooling.cpp
-  base/memory/NedPooling.h
-  base/memory/StdAlloc.h
-  base/memory/StlAlloc.h
 
   base/threading/ConditionVariable.h
   base/threading/ConditionVariable.cpp
@@ -188,9 +181,12 @@ elseif(USE_JOB_SYSTEM_TBB)
     )
 endif()
 
+target_compile_definitions(${target_name} PUBLIC NOMINMAX)
+target_compile_definitions(${target_name} PUBLIC CC_USE_PROFILER=0)
+target_compile_definitions(${target_name} PUBLIC USE_MEMORY_LEAK_DETECTOR=0)
 target_compile_definitions(${target_name} PUBLIC
-    $<IF:$<BOOL:${USE_JOB_SYSTEM_TBB}>,USE_JOB_SYSTEM_TBB=1,USE_JOB_SYSTEM_TBB=0>
-    $<IF:$<BOOL:${USE_JOB_SYSTEM_TASKFLOW}>,USE_JOB_SYSTEM_TASKFLOW=1,USE_JOB_SYSTEM_TASKFLOW=0>
+    $<IF:$<BOOL:${USE_JOB_SYSTEM_TBB}>,CC_USE_JOB_SYSTEM_TBB=1,CC_USE_JOB_SYSTEM_TBB=0>
+    $<IF:$<BOOL:${USE_JOB_SYSTEM_TASKFLOW}>,CC_USE_JOB_SYSTEM_TASKFLOW=1,CC_USE_JOB_SYSTEM_TASKFLOW=0>
     $<$<CONFIG:Debug>:CC_DEBUG=1>
 )
 
