@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2020-2021 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2020-2022 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
@@ -52,7 +52,7 @@ private:
 
     static constexpr uint32_t STAGING_BUFFER_THRESHOLD = MessageQueue::MEMORY_CHUNK_SIZE / 2;
 
-    vector<uint8_t *> _stagingBuffers;
+    ccstd::vector<uint8_t *> _stagingBuffers;
 };
 
 } // namespace gfx

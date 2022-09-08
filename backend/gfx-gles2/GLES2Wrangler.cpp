@@ -29,7 +29,7 @@
     #define WIN32_LEAN_AND_MEAN 1
     #include <windows.h>
 
-static HMODULE libegl  = NULL;
+static HMODULE libegl = NULL;
 static HMODULE libgles = NULL;
 
 bool gles2wOpen() {
@@ -37,6 +37,21 @@ bool gles2wOpen() {
     // libgles = LoadLibraryA("libGLESv2.dll");
     // return (libegl && libgles);
     return true;
+}
+
+bool gles2wClose() {
+    bool ret = true;
+    if (libegl) {
+        ret &= FreeLibrary(libegl) ? true : false;
+        libegl = NULL;
+    }
+
+    if (libgles) {
+        ret &= FreeLibrary(libgles) ? true : false;
+        libgles = NULL;
+    }
+
+    return ret;
 }
 
 void *gles2wLoad(const char *proc) {
@@ -49,6 +64,7 @@ void *gles2wLoad(const char *proc) {
 #elif defined(__EMSCRIPTEN__)
 
 bool gles2wOpen() { return true; }
+bool gles2wClose() { return true; }
 void *gles2wLoad(const char *proc) {
     return (void *)eglGetProcAddress(proc);
 }
@@ -57,7 +73,7 @@ void *gles2wLoad(const char *proc) {
 
 #include <dlfcn.h>
 
-static void *libegl  = nullptr;
+static void *libegl = nullptr;
 static void *libgles = nullptr;
 
 bool gles2wOpen() {
@@ -68,6 +84,21 @@ bool gles2wOpen() {
     libgles = dlopen("libGLESv2.so", RTLD_LAZY | RTLD_GLOBAL);
     #endif
     return (libegl && libgles);
+}
+
+bool gles2wClose() {
+    bool ret = true;
+    if (libegl) {
+        ret &= dlclose(libegl) == 0;
+        libegl = nullptr;
+    }
+
+    if (libgles) {
+        ret &= dlclose(libgles) == 0;
+        libgles = nullptr;
+    }
+
+    return ret;
 }
 
 void *gles2wLoad(const char *proc) {
@@ -92,4 +123,8 @@ bool gles2wInit(void) {
     // gladLoaderLoadGLES2();
     return true;
     // return gladLoaderLoadEGL(nullptr) && gladLoaderLoadGLES2();
+}
+
+bool gles2wExit() {
+    return gles2wClose();
 }

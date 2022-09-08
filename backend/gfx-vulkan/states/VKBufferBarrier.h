@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2021-2022 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2020-2022 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
@@ -23,18 +23,26 @@
  THE SOFTWARE.
 ****************************************************************************/
 
-#include "base/CoreStd.h"
+#pragma once
 
-#include "Memory.h"
-#include "StlAlloc.h"
+#include "../VKStd.h"
+#include "gfx-base/states/GFXBufferBarrier.h"
 
 namespace cc {
-CC_DLL SA<char, STLAP> stl_char_allocator;
+namespace gfx {
 
-#if 0
-CC_DLL void* BareNewErroneouslyCalled(size_t sz) {
-	return malloc(sz);
-}
-#endif
+struct CCVKGPUBufferBarrier;
 
+class CC_VULKAN_API CCVKBufferBarrier : public BufferBarrier {
+public:
+    explicit CCVKBufferBarrier(const BufferBarrierInfo &info);
+    ~CCVKBufferBarrier() override;
+
+    inline const CCVKGPUBufferBarrier *gpuBarrier() const { return _gpuBarrier; }
+
+protected:
+    CCVKGPUBufferBarrier *_gpuBarrier = nullptr;
+};
+
+} // namespace gfx
 } // namespace cc

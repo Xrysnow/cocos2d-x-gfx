@@ -34,7 +34,7 @@
 #include "glad/glad.h"
 
 bool gles3wInit();
-
+bool gles3wExit();
 // #include "../gfx-gles-common/eglw.h"
 // #include "../gfx-gles-common/gles2w.h"
 // #include "../gfx-gles-common/gles3w.h"

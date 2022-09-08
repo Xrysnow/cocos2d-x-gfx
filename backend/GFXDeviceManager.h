@@ -128,15 +128,17 @@ public:
 private:
     template <typename DeviceCtor, typename Enable = std::enable_if_t<std::is_base_of<Device, DeviceCtor>::value>>
     static bool tryCreate(const DeviceInfo &info, Device **pDevice) {
-        Device *device = CC_NEW(DeviceCtor);
+        Device *device = ccnew DeviceCtor;
 
         if (DETACH_DEVICE_THREAD) {
-            device = CC_NEW(gfx::DeviceAgent(device));
+            device = ccnew gfx::DeviceAgent(device);
         }
 
+#if !defined(CC_SERVER_MODE)
         if (CC_DEBUG > 0 && !FORCE_DISABLE_VALIDATION || FORCE_ENABLE_VALIDATION) {
-            device = CC_NEW(gfx::DeviceValidator(device));
+            device = ccnew gfx::DeviceValidator(device);
         }
+#endif
 
         if (!device->initialize(info)) {
             CC_SAFE_DELETE(device);

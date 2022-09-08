@@ -24,8 +24,11 @@
 ****************************************************************************/
 
 #include "StringUtil.h"
+
+#include <algorithm>
+#include <cctype>
 #include <cstdarg>
-#include <string>
+#include "base/std/container/string.h"
 #include "memory/Memory.h"
 
 #if (CC_PLATFORM == CC_PLATFORM_WINDOWS)
@@ -42,7 +45,7 @@ int StringUtil::vprintf(char *buf, const char *last, const char *fmt, va_list ar
     if (last <= buf) return 0;
 
     int count = (int)(last - buf);
-    int ret   = _vsnprintf_s(buf, count, _TRUNCATE, fmt, args);
+    int ret = _vsnprintf_s(buf, count, _TRUNCATE, fmt, args);
     if (ret < 0) {
         if (errno == 0) {
             return count - 1;
@@ -59,8 +62,8 @@ int StringUtil::vprintf(char *buf, const char *last, const char *fmt, va_list ar
         return 0;
     }
 
-    int count = static_cast<int>(last - buf);
-    int ret   = vsnprintf(buf, count, fmt, args);
+    auto count = static_cast<int>(last - buf);
+    int ret = vsnprintf(buf, count, fmt, args);
     if (ret >= count - 1) {
         return count - 1;
     }
@@ -79,8 +82,8 @@ int StringUtil::printf(char *buf, const char *last, const char *fmt, ...) {
     return ret;
 }
 
-String StringUtil::format(const char *fmt, ...) {
-    char    sz[4096];
+ccstd::string StringUtil::format(const char *fmt, ...) {
+    char sz[4096];
     va_list args;
     va_start(args, fmt);
     vprintf(sz, sz + sizeof(sz) - 1, fmt, args);
@@ -88,8 +91,8 @@ String StringUtil::format(const char *fmt, ...) {
     return sz;
 }
 
-StringArray StringUtil::split(const String &str, const String &delims, uint maxSplits) {
-    StringArray strs;
+ccstd::vector<ccstd::string> StringUtil::split(const ccstd::string &str, const ccstd::string &delims, uint32_t maxSplits) {
+    ccstd::vector<ccstd::string> strs;
     if (str.empty()) {
         return strs;
     }
@@ -97,18 +100,17 @@ StringArray StringUtil::split(const String &str, const String &delims, uint maxS
     // Pre-allocate some space for performance
     strs.reserve(maxSplits ? maxSplits + 1 : 16); // 16 is guessed capacity for most case
 
-    uint numSplits = 0;
+    uint32_t numSplits{0};
 
     // Use STL methods
-    size_t start;
-    size_t pos;
-    start = 0;
+    size_t start{0};
+    size_t pos{0};
     do {
         pos = str.find_first_of(delims, start);
         if (pos == start) {
             // Do nothing
             start = pos + 1;
-        } else if (pos == String::npos || (maxSplits && numSplits == maxSplits)) {
+        } else if (pos == ccstd::string::npos || (maxSplits && numSplits == maxSplits)) {
             // Copy the rest of the string
             strs.push_back(str.substr(start));
             break;
@@ -120,9 +122,42 @@ StringArray StringUtil::split(const String &str, const String &delims, uint maxS
         // parse up to next real data
         start = str.find_first_not_of(delims, start);
         ++numSplits;
-    } while (pos != String::npos);
+    } while (pos != ccstd::string::npos);
 
     return strs;
+}
+
+ccstd::string &StringUtil::replace(ccstd::string &str, const ccstd::string &findStr, const ccstd::string &replaceStr) {
+    size_t startPos = str.find(findStr);
+    if (startPos == ccstd::string::npos) {
+        return str;
+    }
+    str.replace(startPos, findStr.length(), replaceStr);
+    return str;
+}
+
+ccstd::string &StringUtil::replaceAll(ccstd::string &str, const ccstd::string &findStr, const ccstd::string &replaceStr) {
+    if (findStr.empty()) {
+        return str;
+    }
+    size_t startPos = 0;
+    while ((startPos = str.find(findStr, startPos)) != ccstd::string::npos) {
+        str.replace(startPos, findStr.length(), replaceStr);
+        startPos += replaceStr.length();
+    }
+    return str;
+}
+
+ccstd::string &StringUtil::tolower(ccstd::string &str) {
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return str;
+}
+
+ccstd::string &StringUtil::toupper(ccstd::string &str) {
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+    return str;
 }
 
 } // namespace cc

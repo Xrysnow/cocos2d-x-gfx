@@ -31,8 +31,8 @@
 #include "base/memory/MemoryHook.h"
 // #include "platform/FileUtils.h"
 
-#if CC_PLATFORM == CC_PLATFORM_MAC_IOS || CC_PLATFORM == CC_PLATFORM_MAC_OSX
-    #include <sys/time.h>
+#if CC_PLATFORM == CC_PLATFORM_IOS || CC_PLATFORM == CC_PLATFORM_MACOS
+#include <sys/time.h>
 #endif
 
 #include <cmath>
@@ -63,7 +63,7 @@ double atof(const char *str) {
     return ::atof(buf);
 }
 
-uint nextPOT(uint x) {
+uint32_t nextPOT(uint32_t x) {
     x = x - 1;
     x = x | (x >> 1);
     x = x | (x >> 2);
@@ -74,7 +74,7 @@ uint nextPOT(uint x) {
 }
 
 // painfully slow to execute, use with caution
-std::string getStacktrace(uint skip, uint maxDepth) {
+ccstd::string getStacktrace(uint32_t skip, uint32_t maxDepth) {
     //return boost::stacktrace::to_string(boost::stacktrace::stacktrace(skip, maxDepth));
     return "";
 }

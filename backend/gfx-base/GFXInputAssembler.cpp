@@ -23,12 +23,11 @@
  THE SOFTWARE.
 ****************************************************************************/
 
-#include "base/CoreStd.h"
+#include "base/std/hash/hash.h"
 
 #include "GFXBuffer.h"
 #include "GFXInputAssembler.h"
 #include "GFXObject.h"
-#include "base/Utils.h"
 
 namespace cc {
 namespace gfx {
@@ -39,23 +38,23 @@ InputAssembler::InputAssembler()
 
 InputAssembler::~InputAssembler() = default;
 
-size_t InputAssembler::computeAttributesHash() const {
-    size_t seed = _attributes.size() * 6;
+ccstd::hash_t InputAssembler::computeAttributesHash() const {
+    ccstd::hash_t seed = static_cast<uint32_t>(_attributes.size()) * 6;
     for (const auto &attribute : _attributes) {
-        utils::hash_combine(seed, attribute.name);
-        utils::hash_combine(seed, attribute.format);
-        utils::hash_combine(seed, attribute.isNormalized);
-        utils::hash_combine(seed, attribute.stream);
-        utils::hash_combine(seed, attribute.isInstanced);
-        utils::hash_combine(seed, attribute.location);
+        ccstd::hash_combine(seed, attribute.name);
+        ccstd::hash_combine(seed, attribute.format);
+        ccstd::hash_combine(seed, attribute.isNormalized);
+        ccstd::hash_combine(seed, attribute.stream);
+        ccstd::hash_combine(seed, attribute.isInstanced);
+        ccstd::hash_combine(seed, attribute.location);
     }
     return seed;
 }
 
 void InputAssembler::initialize(const InputAssemblerInfo &info) {
-    _attributes     = info.attributes;
-    _vertexBuffers  = info.vertexBuffers;
-    _indexBuffer    = info.indexBuffer;
+    _attributes = info.attributes;
+    _vertexBuffers = info.vertexBuffers;
+    _indexBuffer = info.indexBuffer;
     _indirectBuffer = info.indirectBuffer;
     _attributesHash = computeAttributesHash();
 
@@ -63,8 +62,8 @@ void InputAssembler::initialize(const InputAssemblerInfo &info) {
         _drawInfo.indexCount = _indexBuffer->getCount();
         _drawInfo.firstIndex = 0;
     } else if (!_vertexBuffers.empty()) {
-        _drawInfo.vertexCount  = _vertexBuffers[0]->getCount();
-        _drawInfo.firstVertex  = 0;
+        _drawInfo.vertexCount = _vertexBuffers[0]->getCount();
+        _drawInfo.firstVertex = 0;
         _drawInfo.vertexOffset = 0;
     }
 
@@ -78,7 +77,7 @@ void InputAssembler::destroy() {
     _attributesHash = 0U;
 
     _vertexBuffers.clear();
-    _indexBuffer    = nullptr;
+    _indexBuffer = nullptr;
     _indirectBuffer = nullptr;
 
     _drawInfo = DrawInfo();
