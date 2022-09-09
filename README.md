@@ -10,3 +10,7 @@ Now it is based on [this branch of cocos-engine](https://github.com/cocos/cocos-
 - glslang
 - spirv-cross
 - PVRVFrame libraries (for GLES backend, Windows and Mac)
+
+### CMake usage
+
+- See https://github.com/Xrysnow/cocos2d-x-3rd-party-libs-bin/blob/gfx/CMakeLists.txt
