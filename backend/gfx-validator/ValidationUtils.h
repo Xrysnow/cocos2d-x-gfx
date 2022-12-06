@@ -157,8 +157,8 @@ DeviceResourceTracker<Resource, Enable>::push(T *resource) {
 
 template <typename Resource, typename Enable>
 void DeviceResourceTracker<Resource, Enable>::erase(Resource *resource) {
-    CC_ASSERT(!resources.empty());
-
+    if (resources.empty())
+        return;
     resources.erase(std::remove_if(resources.begin(), resources.end(),
                                    [resource](const auto &record) { return record.resource == resource; }));
 }
