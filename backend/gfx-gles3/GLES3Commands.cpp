@@ -1187,6 +1187,8 @@ void cmdFuncGLES3CreateShader(GLES3Device *device, GLES3GPUShader *gpuShader) {
                 break;
             }
         }
+        CC_ASSERT(glBlock.set != INVALID_BINDING);
+        CC_ASSERT(glBlock.binding != INVALID_BINDING);
     }
 
     for (GLint i = 0; i < bufferCount; ++i) {
@@ -1217,6 +1219,8 @@ void cmdFuncGLES3CreateShader(GLES3Device *device, GLES3GPUShader *gpuShader) {
                 break;
             }
         }
+        CC_ASSERT(glBuffer.set != INVALID_BINDING);
+        CC_ASSERT(glBuffer.binding != INVALID_BINDING);
     }
 
 /*
@@ -2538,9 +2542,12 @@ void cmdFuncGLES3BindState(GLES3Device *device, GLES3GPUPipelineState *gpuPipeli
         size_t bufferLen = gpuPipelineState->gpuShader->glBuffers.size();
         for (size_t j = 0; j < bufferLen; j++) {
             const GLES3GPUUniformBuffer &glBuffer = gpuPipelineState->gpuShader->glBuffers[j];
+            CC_ASSERT(glBuffer.set != INVALID_BINDING);
+            CC_ASSERT(glBuffer.binding != INVALID_BINDING);
 
             const GLES3GPUDescriptorSet *gpuDescriptorSet = gpuDescriptorSets[glBuffer.set];
             const uint32_t descriptorIndex = gpuDescriptorSet->descriptorIndices->at(glBuffer.binding);
+            CC_ASSERT(descriptorIndex < gpuDescriptorSet->gpuDescriptors.size());
             const GLES3GPUDescriptor &gpuDescriptor = gpuDescriptorSet->gpuDescriptors[descriptorIndex];
 
             if (!gpuDescriptor.gpuBuffer) {
