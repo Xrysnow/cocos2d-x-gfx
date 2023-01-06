@@ -28,10 +28,10 @@
 #include "base/Macros.h"
 
 #if (CC_PLATFORM != CC_PLATFORM_MAC_IOS)
-    #include "glad/glad_egl.h"
+	#include "glad/include/glad/egl.h"
 #endif
 
-#include "glad/glad.h"
+#include "glad/include/glad/gl.h"
 
 bool gles3wInit();
 bool gles3wExit();
