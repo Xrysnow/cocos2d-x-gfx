@@ -45,7 +45,7 @@ namespace ccstd
     inline hash_t hash_range(const void* start, const void* end)
     {
         const auto diff = (const char*)end - (const char*)start;
-        if (sizeof(hash_t) == sizeof(uint64_t))
+        if constexpr (sizeof(hash_t) == sizeof(uint64_t))
         {
             return XXH64(start, diff, 0);
         }
@@ -57,7 +57,7 @@ namespace ccstd
 
     inline hash_t hash_value(const void* value)
     {
-        if (sizeof(hash_t) == sizeof(uint64_t))
+        if constexpr (sizeof(hash_t) == sizeof(uint64_t))
         {
             return XXH64(&value, sizeof(void*), 0);
         }
