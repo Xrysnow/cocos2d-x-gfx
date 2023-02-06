@@ -36,6 +36,7 @@ set(src_dir ${CMAKE_CURRENT_SOURCE_DIR})
 
 set(gfx_src
   base/Agent.h
+  base/Assertf.h
   base/CachedArray.h
   base/CoreStd.h
   base/IndexHandle.h

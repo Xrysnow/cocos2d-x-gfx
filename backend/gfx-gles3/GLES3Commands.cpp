@@ -1,18 +1,17 @@
 /****************************************************************************
- Copyright (c) 2019-2022 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2019-2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated engine source code (the "Software"), a limited,
- worldwide, royalty-free, non-assignable, revocable and non-exclusive license
- to use Cocos Creator solely to develop games on your target platforms. You shall
- not use Cocos Creator software for developing other software or tools that's
- used for developing games. You are not granted to publish, distribute,
- sublicense, and/or sell copies of Cocos Creator.
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
 
- The software or tools in this License Agreement are licensed, not sold.
- Xiamen Yaji Software Co., Ltd. reserves all rights not expressly granted to you.
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
 
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -162,7 +161,7 @@ GLenum mapGLInternalFormat(Format format) {
         case Format::ASTC_SRGBA_12X12: return GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR;
 
         default: {
-            CC_ASSERT(false);
+            CC_ABORT();
             return GL_NONE;
         }
     }
@@ -286,7 +285,7 @@ GLenum mapGLFormat(Format format) {
         case Format::ASTC_SRGBA_12X12: return GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR;
 
         default: {
-            CC_ASSERT(false);
+            CC_ABORT();
             return GL_NONE;
         }
     }
@@ -321,7 +320,7 @@ GLenum mapGLType(Type type) {
         case Type::SAMPLER3D: return GL_SAMPLER_3D;
         case Type::SAMPLER_CUBE: return GL_SAMPLER_CUBE;
         default: {
-            CC_ASSERT(false);
+            CC_ABORT();
             return GL_NONE;
         }
     }
@@ -359,7 +358,7 @@ Type mapType(GLenum glType) {
         case GL_SAMPLER_3D: return Type::SAMPLER3D;
         case GL_SAMPLER_CUBE: return Type::SAMPLER_CUBE;
         default: {
-            CC_ASSERT(false);
+            CC_ABORT();
             return Type::UNKNOWN;
         }
     }
@@ -488,7 +487,7 @@ GLenum formatToGLType(Format format) {
             return GL_UNSIGNED_BYTE;
 
         default: {
-            CC_ASSERT(false);
+            CC_ABORT();
             return GL_NONE;
         }
     }
@@ -666,7 +665,7 @@ void cmdFuncGLES3CreateBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer) {
         gpuBuffer->buffer = static_cast<uint8_t *>(CC_MALLOC(gpuBuffer->size));
         gpuBuffer->glTarget = GL_NONE;
     } else {
-        CC_ASSERT(false);
+        CC_ABORT();
         gpuBuffer->glTarget = GL_NONE;
     }
 }
@@ -730,7 +729,7 @@ void cmdFuncGLES3DestroyBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer) {
         GL_CHECK(glDeleteBuffers(1, &gpuBuffer->glBuffer));
         gpuBuffer->glBuffer = 0;
     }
-    CC_SAFE_FREE(gpuBuffer->buffer)
+    CC_SAFE_FREE(gpuBuffer->buffer);
 }
 
 void cmdFuncGLES3ResizeBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer) {
@@ -798,7 +797,7 @@ void cmdFuncGLES3ResizeBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer) {
         gpuBuffer->buffer = static_cast<uint8_t *>(CC_MALLOC(gpuBuffer->size));
         gpuBuffer->glTarget = GL_NONE;
     } else {
-        CC_ASSERT(false);
+        CC_ABORT();
         gpuBuffer->glTarget = GL_NONE;
     }
 }
@@ -857,7 +856,7 @@ void cmdFuncGLES3CreateTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture)
                 break;
             }
             default:
-                CC_ASSERT(false);
+                CC_ABORT();
                 break;
         }
     } else {
@@ -877,6 +876,38 @@ void cmdFuncGLES3CreateTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture)
                 }
                 break;
             }
+            case TextureType::TEX2D_ARRAY: {
+                gpuTexture->glTarget = GL_TEXTURE_2D_ARRAY;
+                GL_CHECK(glGenTextures(1, &gpuTexture->glTexture));
+                if (gpuTexture->size > 0) {
+                    GLuint &glTexture = device->stateCache()->glTextures[device->stateCache()->texUint];
+                    if (gpuTexture->glTexture != glTexture) {
+                        GL_CHECK(glBindTexture(GL_TEXTURE_2D_ARRAY, gpuTexture->glTexture));
+                        glTexture = gpuTexture->glTexture;
+                    }
+                    uint32_t w = gpuTexture->width;
+                    uint32_t h = gpuTexture->height;
+                    uint32_t d = gpuTexture->arrayLayer;
+                    GL_CHECK(glTexStorage3D(GL_TEXTURE_2D_ARRAY, gpuTexture->mipLevel, gpuTexture->glInternalFmt, w, h, d));
+                }
+                break;
+            }
+            case TextureType::TEX3D: {
+                gpuTexture->glTarget = GL_TEXTURE_3D;
+                GL_CHECK(glGenTextures(1, &gpuTexture->glTexture));
+                if (gpuTexture->size > 0) {
+                    GLuint &glTexture = device->stateCache()->glTextures[device->stateCache()->texUint];
+                    if (gpuTexture->glTexture != glTexture) {
+                        GL_CHECK(glBindTexture(GL_TEXTURE_3D, gpuTexture->glTexture));
+                        glTexture = gpuTexture->glTexture;
+                    }
+                    uint32_t w = gpuTexture->width;
+                    uint32_t h = gpuTexture->height;
+                    uint32_t d = gpuTexture->depth;
+                    GL_CHECK(glTexStorage3D(GL_TEXTURE_3D, gpuTexture->mipLevel, gpuTexture->glInternalFmt, w, h, d));
+                }
+                break;
+            }
             case TextureType::CUBE: {
                 gpuTexture->glTarget = GL_TEXTURE_CUBE_MAP;
                 GL_CHECK(glGenTextures(1, &gpuTexture->glTexture));
@@ -893,7 +924,7 @@ void cmdFuncGLES3CreateTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture)
                 break;
             }
             default:
-                CC_ASSERT(false);
+                CC_ABORT();
                 break;
         }
     }
@@ -948,7 +979,7 @@ void cmdFuncGLES3ResizeTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture)
                 break;
             }
             default:
-                CC_ASSERT(false);
+                CC_ABORT();
                 break;
         }
     }
@@ -1029,11 +1060,10 @@ void cmdFuncGLES3CreateShader(GLES3Device *device, GLES3GPUShader *gpuShader) {
                 break;
             }
             default: {
-                CC_ASSERT(false);
+                CC_ABORT();
                 return;
             }
         }
-
         GL_CHECK(gpuStage.glShader = glCreateShader(glShaderStage));
         ccstd::string      shaderSource;
         if (gpuStage.source.size() <= 9 || gpuStage.source.substr(0, 9) != "#version ")
@@ -1492,7 +1522,7 @@ void cmdFuncGLES3CreateRenderPass(GLES3Device * /*device*/, GLES3GPURenderPass *
                   gpuRenderPass->statistics[i].storeSubpass != SUBPASS_EXTERNAL);
     }
 
-    ccstd::unordered_map<GFXObject*, std::pair<GLbitfield, GLbitfield>> resRecord;
+    ccstd::unordered_map<GFXObject *, std::pair<GLbitfield, GLbitfield>> resRecord;
     // if barrier deduce enabled: should deduce this from subpass & attachment access infos
     if constexpr (ENABLE_GRAPH_AUTO_BARRIER) {
         gpuRenderPass->subpassBarriers.resize(gpuRenderPass->dependencies.size());
@@ -2319,7 +2349,7 @@ void cmdFuncGLES3EndRenderPass(GLES3Device *device) {
         bool skipStore = subpass.depthStencil == INVALID_BINDING ||
                          gpuRenderPass->statistics[subpass.depthStencil].storeSubpass != gfxStateCache.subpassIdx;
         performDepthStencilStoreOp(subpass.depthStencil, skipStore);
-        
+
         cmdFuncGLES3MemoryBarrier(device, gpuRenderPass->subpassBarriers.back().glBarriers, gpuRenderPass->subpassBarriers.back().glBarriersByRegion);
     }
 }
@@ -2980,11 +3010,6 @@ void cmdFuncGLES3UpdateBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer, co
                     GL_CHECK(glBindBuffer(GL_UNIFORM_BUFFER, gpuBuffer->glBuffer));
                     device->stateCache()->glUniformBuffer = gpuBuffer->glBuffer;
                 }
-                //if (((const uint8_t*)buffer)[0] == 0xdd)
-                //{
-                //    CC_LOG_ERROR("%s: offset=%d, size=%d", __FUNCTION__, offset, size);
-                //    CC_ASSERT(false);
-                //}
                 uploadBufferData(GL_UNIFORM_BUFFER, offset, size, buffer);
                 break;
             }
@@ -2997,7 +3022,7 @@ void cmdFuncGLES3UpdateBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer, co
                 break;
             }
             default:
-                CC_ASSERT(false);
+                CC_ABORT();
                 break;
         }
     }
@@ -3247,7 +3272,7 @@ void cmdFuncGLES3CopyBuffersToTexture(GLES3Device *device, const uint8_t *const 
             break;
         }
         default:
-            CC_ASSERT(false);
+            CC_ABORT();
             break;
     }
 

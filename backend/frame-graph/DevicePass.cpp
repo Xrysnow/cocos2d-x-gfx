@@ -1,18 +1,17 @@
 /****************************************************************************
- Copyright (c) 2021-2022 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2021-2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated engine source code (the "Software"), a limited,
- worldwide, royalty-free, non-assignable, revocable and non-exclusive license
- to use Cocos Creator solely to develop games on your target platforms. You shall
- not use Cocos Creator software for developing other software or tools that's
- used for developing games. You are not granted to publish, distribute,
- sublicense, and/or sell copies of Cocos Creator.
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
 
- The software or tools in this License Agreement are licensed, not sold.
- Xiamen Yaji Software Co., Ltd. reserves all rights not expressly granted to you.
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
 
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -48,7 +47,7 @@ DevicePass::DevicePass(const FrameGraph &graph, ccstd::vector<PassNode *> const 
         _subpasses.back().barrierID = index++;
     }
 
-    auto* device = gfx::Device::getInstance();
+    auto *device = gfx::Device::getInstance();
     // _enableAutoBarrier: auto barrier in framegraph
     // barrierDeduce: deduce barrier gfx internally
     // to avoid redundant instructions, either inside or outside
@@ -69,7 +68,7 @@ DevicePass::DevicePass(const FrameGraph &graph, ccstd::vector<PassNode *> const 
     auto depthNewIndex = gfx::INVALID_BINDING;
     for (uint32_t id = 0; id != attachments.size(); ++id) {
         if (attachments[id].desc.usage != RenderTargetAttachment::Usage::COLOR) {
-            CC_ASSERT(depthIndex == gfx::INVALID_BINDING);
+            CC_ASSERT_EQ(depthIndex, gfx::INVALID_BINDING);
             depthIndex = id;
             depthNewIndex = static_cast<uint32_t>(attachments.size() - 1);
         }
@@ -140,7 +139,7 @@ void DevicePass::passDependency(gfx::RenderPassInfo &rpInfo) {
         uint32_t lastBufferIndex{0};
         uint32_t lastTextureIndex{0};
 
-        auto mergeToDependency = [&](uint32_t barrierID, uint32_t subpassIndex){
+        auto mergeToDependency = [&](uint32_t barrierID, uint32_t subpassIndex) {
             for (const auto &frontBarrier : _barriers[barrierID].get().frontBarriers) {
                 const auto &res = getBarrier(frontBarrier, &_resourceTable);
                 if (frontBarrier.resourceType == ResourceType::BUFFER) {
@@ -150,7 +149,7 @@ void DevicePass::passDependency(gfx::RenderPassInfo &rpInfo) {
                     textureBarriers.emplace_back(static_cast<gfx::TextureBarrier *>(res.first));
                     textures.emplace_back(static_cast<gfx::Texture *>(res.second));
                 } else {
-                    CC_ASSERT(false);
+                    CC_ABORT();
                 }
             }
 
@@ -163,10 +162,10 @@ void DevicePass::passDependency(gfx::RenderPassInfo &rpInfo) {
                 nullptr,
                 bufferBarriers.data() + lastBufferIndex,
                 buffers.data() + lastBufferIndex,
-                static_cast<uint32_t>(buffers.size() - lastBufferIndex + 1),
+                static_cast<uint32_t>(buffers.size() - lastBufferIndex),
                 textureBarriers.data() + lastTextureIndex,
                 textures.data() + lastTextureIndex,
-                static_cast<uint32_t>(textures.size() - lastTextureIndex + 1)});
+                static_cast<uint32_t>(textures.size() - lastTextureIndex)});
 
             for (const auto &rearBarrier : _barriers[barrierID].get().rearBarriers) {
                 const auto &res = getBarrier(rearBarrier, &_resourceTable);
@@ -177,16 +176,15 @@ void DevicePass::passDependency(gfx::RenderPassInfo &rpInfo) {
                     textureBarriers.emplace_back(static_cast<gfx::TextureBarrier *>(res.first));
                     textures.emplace_back(static_cast<gfx::Texture *>(res.second));
                 } else {
-                    CC_ASSERT(false);
+                    CC_ABORT();
                 }
             }
-
         };
 
-        if(!_subpasses.empty()) {
+        if (!_subpasses.empty()) {
             for (const auto &subpass : _subpasses) {
                 mergeToDependency(subpass.barrierID, index);
-                ++index;   
+                ++index;
             }
         } else {
             mergeToDependency(0, 0);
@@ -199,10 +197,10 @@ void DevicePass::passDependency(gfx::RenderPassInfo &rpInfo) {
                 nullptr,
                 bufferBarriers.data() + lastBufferIndex,
                 buffers.data() + lastBufferIndex,
-                static_cast<uint32_t>(buffers.size() - lastBufferIndex + 1),
+                static_cast<uint32_t>(buffers.size() - lastBufferIndex),
                 textureBarriers.data() + lastTextureIndex,
                 textures.data() + lastTextureIndex,
-                static_cast<uint32_t>(textures.size() - lastTextureIndex + 1)});
+                static_cast<uint32_t>(textures.size() - lastTextureIndex)});
         }
     }
 }

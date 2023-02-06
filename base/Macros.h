@@ -3,20 +3,19 @@
  Copyright (c) 2010-2012 cocos2d-x.org
  Copyright (c) 2011 Zynga Inc.
  Copyright (c) 2013-2016 Chukong Technologies Inc.
- Copyright (c) 2017-2022 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2017-2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated engine source code (the "Software"), a limited,
- worldwide, royalty-free, non-assignable, revocable and non-exclusive license
- to use Cocos Creator solely to develop games on your target platforms. You shall
- not use Cocos Creator software for developing other software or tools that's
- used for developing games. You are not granted to publish, distribute,
- sublicense, and/or sell copies of Cocos Creator.
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
 
- The software or tools in this License Agreement are licensed, not sold.
- Xiamen Yaji Software Co., Ltd. reserves all rights not expressly granted to you.
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
 
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -51,7 +50,9 @@
 #define CC_PLATFORM_NX                16
 
 // Determine target platform by compile environment macro.
-#define CC_TARGET_PLATFORM             CC_PLATFORM_UNKNOWN
+#ifndef CC_TARGET_PLATFORM
+    #define CC_TARGET_PLATFORM             CC_PLATFORM_UNKNOWN
+#endif
 
 // Apple: Mac and iOS
 #if defined(__APPLE__) && !defined(ANDROID) // exclude android for binding generator.
@@ -136,27 +137,7 @@ typedef SSIZE_T ssize_t;
     #endif // __SSIZE_T
 #endif
 
-#if (CC_PLATFORM == CC_PLATFORM_ANDROID)
-    #include <android/log.h>
-    #define CC_ASSERT(cond)                                        \
-        if (!(cond)) {                                             \
-            __android_log_print(ANDROID_LOG_ERROR,                 \
-                                "assert",                          \
-                                "%s function:%s line:%d",          \
-                                __FILE__, __FUNCTION__, __LINE__); \
-        }
-#elif (CC_PLATFORM == CC_PLATFORM_OHOS)
-    #include <hilog/log.h>
-    #define CC_ASSERT(cond)                                                      \
-        if (!(cond)) {                                                           \
-            HILOG_ERROR(LOG_APP,                                                 \
-                        "assert %{public}s function:%{public}s line:%{public}d", \
-                        __FILE__, __FUNCTION__, __LINE__);                       \
-        }
-#else
-    #include <assert.h>
-    #define CC_ASSERT(cond) assert(cond)
-#endif
+#include "Assertf.h"
 
 #if (CC_PLATFORM == CC_PLATFORM_WINDOWS)
     #if defined(CC_STATIC)
@@ -284,36 +265,22 @@ It should work same as apples CFSwapInt32LittleToHost(..)
     if (cond) break
 #endif
 
-/** @def CC_DISALLOW_COPY_AND_ASSIGN(TypeName)
-* A macro to disallow the copy constructor and operator= functions.
-* This should be used in the private: declarations for a class
-*/
-#if defined(__GNUC__) && ((__GNUC__ >= 5) || ((__GNUG__ == 4) && (__GNUC_MINOR__ >= 4))) || (defined(__clang__) && (__clang_major__ >= 3)) || (_MSC_VER >= 1800)
-    #define CC_DISALLOW_COPY_AND_ASSIGN(TypeName) \
-        TypeName(const TypeName &) = delete;      \
-        TypeName &operator=(const TypeName &) = delete;
-#else
-    #define CC_DISALLOW_COPY_AND_ASSIGN(TypeName) \
-        TypeName(const TypeName &);               \
-        TypeName &operator=(const TypeName &);
-#endif
-
 /** @def CC_DEPRECATED_ATTRIBUTE
-* Only certain compilers support __attribute__((deprecated)).
-*/
+ * Only certain compilers support __attribute__((deprecated)).
+ */
 #if defined(__GNUC__) && ((__GNUC__ >= 4) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 1)))
     #define CC_DEPRECATED_ATTRIBUTE __attribute__((deprecated))
-#elif _MSC_VER >= 1400 //vs 2005 or higher
+#elif _MSC_VER >= 1400 // vs 2005 or higher
     #define CC_DEPRECATED_ATTRIBUTE __declspec(deprecated)
 #else
     #define CC_DEPRECATED_ATTRIBUTE
 #endif
 
 /** @def CC_DEPRECATED(...)
-* Macro to mark things deprecated as of a particular version
-* can be used with arbitrary parameters which are thrown away.
-* e.g. CC_DEPRECATED(4.0) or CC_DEPRECATED(4.0, "not going to need this anymore") etc.
-*/
+ * Macro to mark things deprecated as of a particular version
+ * can be used with arbitrary parameters which are thrown away.
+ * e.g. CC_DEPRECATED(4.0) or CC_DEPRECATED(4.0, "not going to need this anymore") etc.
+ */
 #define CC_DEPRECATED(...) CC_DEPRECATED_ATTRIBUTE
 
 #ifdef __GNUC__
@@ -323,14 +290,6 @@ It should work same as apples CFSwapInt32LittleToHost(..)
 #endif
 
 #define CC_UNUSED_PARAM(unusedparam) (void)unusedparam
-
-#ifndef NULL
-    #ifdef __cplusplus
-        #define NULL 0
-    #else
-        #define NULL ((void *)0)
-    #endif
-#endif
 
 /** @def CC_FORMAT_PRINTF(formatPos, argPos)
  * Only certain compiler support __attribute__((format))
@@ -394,84 +353,56 @@ It should work same as apples CFSwapInt32LittleToHost(..)
 // Compiler type and version recognition
 #if defined(_MSC_VER)
     #define CC_COMPILER CC_COMPILER_MSVC
-    #if _MSC_VER >= 1900
-        #define CC_COMPILER_VERSION 130
-    #elif _MSC_VER >= 1800
-        #define CC_COMPILER_VERSION 120
-    #elif _MSC_VER >= 1700
-        #define CC_COMPILER_VERSION 110
-    #elif _MSC_VER >= 1600
-        #define CC_COMPILER_VERSION 100
-    #elif _MSC_VER >= 1500
-        #define CC_COMPILER_VERSION 90
-    #elif _MSC_VER >= 1400
-        #define CC_COMPILER_VERSION 80
-    #elif _MSC_VER >= 1300
-        #define CC_COMPILER_VERSION 70
-    #endif
 #elif defined(__clang__)
-    #define CC_COMPILER         CC_COMPILER_CLANG
-    #define CC_COMPILER_VERSION (((__clang_major__)*100) + (__clang_minor__ * 10) + __clang_patchlevel__)
+    #define CC_COMPILER CC_COMPILER_CLANG
 #elif defined(__GNUC__)
-    #define CC_COMPILER         CC_COMPILER_GNUC
-    #define CC_COMPILER_VERSION (((__GNUC__)*100) + (__GNUC_MINOR__ * 10) + __GNUC_PATCHLEVEL__)
+    #define CC_COMPILER CC_COMPILER_GNUC
 #else
     #error "Unknown compiler. Abort!"
 #endif
 
-#if (CC_PLATFORM == CC_PLATFORM_WINDOWS)
-    #define CC_ENDIAN CC_ENDIAN_LITTLE
-#else
-    #if (CC_PLATFORM == CC_PLATFORM_MAC_OSX)
-        #include <machine/endian.h>
-    #elif (CC_PLATFORM == CC_PLATFORM_MAC_IOS)
-        #include <Endian.h>
-    #else
-        #if !defined(__QNX__)
-            #include <endian.h>
-        #else
-            #define CC_ENDIAN CC_ENDIAN_LITTLE
-        #endif
-    #endif // (CC_PLATFORM == CC_PLATFORM_MAC_OSX)
-    #
-    #if __BYTE_ORDER == __LITTLE_ENDIAN
-        #define CC_ENDIAN CC_ENDIAN_LITTLE
-    #else
-        #define CC_ENDIAN CC_ENDIAN_BIG
-    #endif //__BYTE_ORDER == __LITTLE_ENDIAN
-#endif
-
-// CPU architecture type recognition
-#if (defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64))) || (defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__)))
-    #define CC_CPU CC_CPU_X86
-#elif CC_PLATFORM == CC_PLATFORM_MAC_OSX && CC_ENDIAN == CC_ENDIAN_BIG
-    #define CC_CPU CC_CPU_PPC
-#elif CC_PLATFORM == CC_PLATFORM_MAC_OSX
-    #define CC_CPU CC_CPU_X86
-#elif CC_PLATFORM == CC_PLATFORM_MAC_IOS && (defined(__i386__) || defined(__x86_64__))
-    #define CC_CPU CC_CPU_X86
-#elif defined(__arm__) || defined(_M_ARM) || defined(__arm64__) || defined(_aarch64_)
-    #define CC_CPU CC_CPU_ARM
-#elif defined(__mips64) || defined(__mips64_)
-    #define CC_CPU CC_CPU_MIPS
-#else
-    #define CC_CPU CC_CPU_UNKNOWN
-#endif
-
-#if defined(__x86_64__) || defined(_M_X64) || defined(__powerpc64__) || defined(__alpha__) || defined(__ia64__) || defined(__s390__) || defined(__s390x__) || defined(__arm64__) || defined(_aarch64_) || defined(__mips64) || defined(__mips64_)
-    #define CC_CPU_ARCH CC_CPU_ARCH_64
-#else
+#if INTPTR_MAX == INT32_MAX
     #define CC_CPU_ARCH CC_CPU_ARCH_32
+#else
+    #define CC_CPU_ARCH CC_CPU_ARCH_64
 #endif
 
-// C11 features
-#if (CC_COMPILER == CC_COMPILER_MSVC)
-    #if (_MSC_VER >= 1700)
-        #define CC_C11_TYPED_ENUMS
+#if defined(__arm64__) || defined(__aarch64__)
+    #define CC_ARCH_ARM64 1
+#else
+    #define CC_ARCH_ARM64 0
+#endif
+
+// CC_HAS_ARM64_FP16 set to 1 if the architecture provides an IEEE compliant ARM fp16 type
+#if CC_ARCH_ARM64
+    #ifndef CC_HAS_ARM64_FP16
+        #if defined(__ARM_FP16_FORMAT_IEEE)
+            #define CC_HAS_ARM64_FP16 1
+        #else
+            #define CC_HAS_ARM64_FP16 0
+        #endif
     #endif
-#elif (CC_COMPILER == CC_COMPILER_GNUC)
-    #if (__GNUC_MINOR__ >= 4)
-        #define CC_C11_TYPED_ENUMS
+#endif
+
+// CC_HAS_ARM64_FP16_VECTOR_ARITHMETIC set to 1 if the architecture supports Neon vector intrinsics for fp16.
+#if CC_ARCH_ARM64
+    #ifndef CC_HAS_ARM64_FP16_VECTOR_ARITHMETIC
+        #if defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+            #define CC_HAS_ARM64_FP16_VECTOR_ARITHMETIC 1
+        #else
+            #define CC_HAS_ARM64_FP16_VECTOR_ARITHMETIC 0
+        #endif
+    #endif
+#endif
+
+// CC_HAS_ARM64_FP16_SCALAR_ARITHMETIC set to 1 if the architecture supports Neon scalar intrinsics for fp16.
+#if CC_ARCH_ARM64
+    #ifndef CC_HAS_ARM64_FP16_SCALAR_ARITHMETIC
+        #if defined(__ARM_FEATURE_FP16_SCALAR_ARITHMETIC)
+            #define CC_HAS_ARM64_FP16_SCALAR_ARITHMETIC 1
+        #else
+            #define CC_HAS_ARM64_FP16_SCALAR_ARITHMETIC 0
+        #endif
     #endif
 #endif
 
@@ -484,22 +415,6 @@ It should work same as apples CFSwapInt32LittleToHost(..)
     #ifndef _SCL_SECURE_NO_DEPRECATE
         #define _SCL_SECURE_NO_DEPRECATE
     #endif
-#endif
-
-// Charset Settings
-#if defined(_UNICODE) || defined(UNICODE)
-    #define CC_CHARSET CC_CHARSET_UNICODE
-#else
-    #define CC_CHARSET CC_CHARSET_MULTIBYTE
-#endif
-
-// Asserts expression is true at compile-time
-#define CC_COMPILER_ASSERT(x) typedef int COMPILER_ASSERT_[!!(x)]
-
-#if (CC_COMPILER == CC_COMPILER_MSVC)
-    #define CC_RESTRICT __restrict //MSVC
-#else
-    #define CC_RESTRICT __restrict__ //GCC... and others?
 #endif
 
 #define CC_CACHELINE_SIZE 64
@@ -533,21 +448,14 @@ It should work same as apples CFSwapInt32LittleToHost(..)
         _Pragma("clang diagnostic pop")
 #endif
 
-#define ENABLE_COPY_SEMANTICS(cls) \
-    cls(const cls &) = default;    \
-    cls &operator=(const cls &) = default;
+#define CC_DISALLOW_ASSIGN(TypeName)                \
+    TypeName &operator=(const TypeName &) = delete; \
+    TypeName &operator=(TypeName &&) = delete;
 
-#define DISABLE_COPY_SEMANTICS(cls) \
-    cls(const cls &) = delete;      \
-    cls &operator=(const cls &) = delete;
-
-#define ENABLE_MOVE_SEMANTICS(cls) \
-    cls(cls &&)  = default;        \
-    cls &operator=(cls &&) = default;
-
-#define DISABLE_MOVE_SEMANTICS(cls) \
-    cls(cls &&)  = delete;          \
-    cls &operator=(cls &&) = delete;
+#define CC_DISALLOW_COPY_MOVE_ASSIGN(TypeName) \
+    TypeName(const TypeName &) = delete;       \
+    TypeName(TypeName &&) = delete;            \
+    CC_DISALLOW_ASSIGN(TypeName)
 
 #if (CC_COMPILER == CC_COMPILER_MSVC)
     #define CC_ALIGN(N)        __declspec(align(N))
@@ -645,14 +553,6 @@ It should work same as apples CFSwapInt32LittleToHost(..)
     #error "Unsupported compiler!"
 #endif
 
-#define CC_SIMD_ALIGNMENT 16
-
-#if (CC_COMPILER == CC_COMPILER_MSVC)
-    #define CC_DECL_MALLOC __declspec(restrict) __declspec(noalias)
-#else
-    #define CC_DECL_MALLOC __attribute__((malloc))
-#endif
-
 /* Stack-alignment
  If macro __CC_SIMD_ALIGN_STACK defined, means there requests
  special code to ensure stack align to a 16-bytes boundary.
@@ -687,37 +587,6 @@ It should work same as apples CFSwapInt32LittleToHost(..)
     #define CC_MODE CC_MODE_RELEASE
 #endif
 
-// Engine Memory Management
-// #if (CC_PLATFORM == CC_PLATFORM_WINDOWS)
-//     #if (CC_MODE == CC_MODE_DEBUG)
-//         #define CC_MEMORY_TRACKER
-//     #endif
-// #elif (CC_PLATFORM == CC_PLATFORM_ANDROID)
-// //#    define CC_MEMORY_TRACKER
-// #else
-// #endif
-
-// use simd
-//#define CC_USE_SIMD
-
-// Memory Allocator
-// #if (CC_PLATFORM == CC_PLATFORM_WINDOWS)
-//     #define CC_MEMORY_ALLOCATOR CC_MEMORY_ALLOCATOR_STD
-//     #undef CC_MEMORY_TRACKER
-// //#if defined(CC_MEMORY_TRACKER)
-// //#    define CC_MEMORY_ALLOCATOR  CC_MEMORY_ALLOCATOR_JEMALLOC
-// //#else
-// //#    define CC_MEMORY_ALLOCATOR  CC_MEMORY_ALLOCATOR_STD
-// //#endif
-// #elif (CC_PLATFORM == CC_PLATFORM_ANDROID)
-//     #if defined(CC_MEMORY_TRACKER)
-//         #define CC_MEMORY_ALLOCATOR CC_MEMORY_ALLOCATOR_JEMALLOC
-//     #else
-//         #define CC_MEMORY_ALLOCATOR CC_MEMORY_ALLOCATOR_STD
-//     #endif
-// #else
-//     #define CC_MEMORY_ALLOCATOR CC_MEMORY_ALLOCATOR_STD
-// #endif
 #define CC_MEMORY_ALLOCATOR CC_MEMORY_ALLOCATOR_STD
 
 // STL memory allocator
@@ -729,14 +598,6 @@ It should work same as apples CFSwapInt32LittleToHost(..)
 
 #define CC_TOSTR(s) #s
 
-#define ENABLE_IF_T(t1)          std::enable_if_t<std::is_same<t1, T>::value, T>
-#define ENABLE_IF_T2(t1, t2)     std::enable_if_t<std::is_same<t1, T>::value || std::is_same<t2, T>::value, T>
-#define ENABLE_IF_T3(t1, t2, t3) std::enable_if_t<std::is_same<t1, T>::value || std::is_same<t2, T>::value || std::is_same<t3, T>::value, T>
-
-#define ENABLE_IF_T_RET(t1)          std::enable_if_t<std::is_same<t1, T>::value, RET>
-#define ENABLE_IF_T2_RET(t1, t2)     std::enable_if_t<std::is_same<t1, T>::value || std::is_same<t2, T>::value, RET>
-#define ENABLE_IF_T3_RET(t1, t2, t3) std::enable_if_t<std::is_same<t1, T>::value || std::is_same<t2, T>::value || std::is_same<t3, T>::value, void>
-
 #if defined(__GNUC__) && __GNUC__ >= 4
     #define CC_PREDICT_TRUE(x)  __builtin_expect(!!(x), 1)
     #define CC_PREDICT_FALSE(x) __builtin_expect(!!(x), 0)
@@ -746,13 +607,13 @@ It should work same as apples CFSwapInt32LittleToHost(..)
 #endif
 
 #if defined(_MSC_VER)
-#define CC_FORCE_INLINE __forceinline
+    #define CC_FORCE_INLINE __forceinline
 #elif defined(__GNUC__) || defined(__clang__)
-#define CC_FORCE_INLINE inline __attribute__((always_inline))
+    #define CC_FORCE_INLINE inline __attribute__((always_inline))
 #else
-#if defined(__cplusplus) || defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L /* C99 */
-#define CC_FORCE_INLINE static inline
-#elif
-#define CC_FORCE_INLINE inline
-#endif
+    #if defined(__cplusplus) || defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L /* C99 */
+        #define CC_FORCE_INLINE static inline
+    #elif
+        #define CC_FORCE_INLINE inline
+    #endif
 #endif

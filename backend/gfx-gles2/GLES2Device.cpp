@@ -1,18 +1,17 @@
 /****************************************************************************
- Copyright (c) 2019-2022 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2019-2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated engine source code (the "Software"), a limited,
- worldwide, royalty-free, non-assignable, revocable and non-exclusive license
- to use Cocos Creator solely to develop games on your target platforms. You shall
- not use Cocos Creator software for developing other software or tools that's
- used for developing games. You are not granted to publish, distribute,
- sublicense, and/or sell copies of Cocos Creator.
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
 
- The software or tools in this License Agreement are licensed, not sold.
- Xiamen Yaji Software Co., Ltd. reserves all rights not expressly granted to you.
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
 
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -188,6 +187,14 @@ bool GLES2Device::doInit(const DeviceInfo & /*info*/) {
     glGetIntegerv(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, reinterpret_cast<GLint *>(&_caps.maxVertexTextureUnits));
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, reinterpret_cast<GLint *>(&_caps.maxTextureSize));
     glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, reinterpret_cast<GLint *>(&_caps.maxCubeMapTextureSize));
+    if (checkExtension("GL_OES_texture_3D")) {
+        glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE_OES, reinterpret_cast<GLint *>(&_caps.max3DTextureSize));
+        // texture2DArray fallback to texture3DOES
+        _caps.maxArrayTextureLayers = _caps.max3DTextureSize;
+    } else {
+        _caps.max3DTextureSize = 0;
+        _caps.maxArrayTextureLayers = 0;
+    }
 
     QueueInfo queueInfo;
     queueInfo.type = QueueType::GRAPHICS;
@@ -219,11 +226,11 @@ void GLES2Device::doDestroy() {
     _gpuBlitManager->destroy();
 
     CC_SAFE_DELETE(_stagingBuffer);
-    CC_SAFE_DELETE(_gpuFramebufferCacheMap)
-    CC_SAFE_DELETE(_gpuConstantRegistry)
-    CC_SAFE_DELETE(_gpuFramebufferHub)
-    CC_SAFE_DELETE(_gpuBlitManager)
-    CC_SAFE_DELETE(_gpuStateCache)
+    CC_SAFE_DELETE(_gpuFramebufferCacheMap);
+    CC_SAFE_DELETE(_gpuConstantRegistry);
+    CC_SAFE_DELETE(_gpuFramebufferHub);
+    CC_SAFE_DELETE(_gpuBlitManager);
+    CC_SAFE_DELETE(_gpuStateCache);
 
     CC_ASSERT(!_memoryStatus.bufferSize);  // Buffer memory leaked.
     CC_ASSERT(!_memoryStatus.textureSize); // Texture memory leaked.
@@ -235,6 +242,8 @@ void GLES2Device::doDestroy() {
 }
 
 void GLES2Device::acquire(Swapchain *const *swapchains, uint32_t count) {
+    _gpuContext->makeCurrent();
+
     if (_onAcquire) _onAcquire->execute();
 
     _swapchains.clear();

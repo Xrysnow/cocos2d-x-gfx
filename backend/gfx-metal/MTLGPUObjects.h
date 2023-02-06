@@ -1,18 +1,17 @@
 /****************************************************************************
- Copyright (c) 2019-2022 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2019-2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated engine source code (the "Software"), a limited,
- worldwide, royalty-free, non-assignable, revocable and non-exclusive license
- to use Cocos Creator solely to develop games on your target platforms. You shall
- not use Cocos Creator software for developing other software or tools that's
- used for developing games. You are not granted to publish, distribute,
- sublicense, and/or sell copies of Cocos Creator.
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
 
- The software or tools in this License Agreement are licensed, not sold.
- Xiamen Yaji Software Co., Ltd. reserves all rights not expressly granted to you.
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
 
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -171,17 +170,10 @@ public:
 
     ~CCMTLGPUStagingBufferPool() {
         for (auto &buffer : _pool) {
-            if (_tripleEnabled) {
-                for (id<MTLBuffer> mtlBuf : buffer.dynamicDataBuffers) {
-                    [mtlBuf release];
-                }
-                buffer.dynamicDataBuffers.clear();
-                buffer.mtlBuffer = nil;
-            } else {
-                [buffer.mtlBuffer release];
-                buffer.mtlBuffer = nil;
-            }
+            [buffer.mtlBuffer release];
+            buffer.mtlBuffer = nil;
         }
+
         _pool.clear();
     }
 
@@ -199,22 +191,12 @@ public:
             }
         }
         if (!buffer) {
-            uint32_t mbNeeds = mu::roundUp(gpuBuffer->size, MegaBytesToBytes);
-            mbNeeds = cc::utils::nextPOT(mbNeeds);
-            CC_ASSERT(mbNeeds > gpuBuffer->size / static_cast<float>(MegaBytesToBytes));
+            uint32_t needs = mu::alignUp(gpuBuffer->size, MegaBytesToBytes);
 
             _pool.resize(bufferCount + 1);
             buffer = &_pool.back();
-            if (_tripleEnabled) {
-                for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-                    // Create a new buffer with enough capacity to store one instance of the dynamic buffer data
-                    id<MTLBuffer> dataBuffer = [_device newBufferWithLength:mbNeeds * MegaBytesToBytes options:MTLResourceStorageModeShared];
-                    buffer->dynamicDataBuffers[i] = dataBuffer;
-                }
-                buffer->mtlBuffer = buffer->dynamicDataBuffers[0];
-            } else {
-                buffer->mtlBuffer = [_device newBufferWithLength:mbNeeds * MegaBytesToBytes options:MTLResourceStorageModeShared];
-            }
+
+            buffer->mtlBuffer = [_device newBufferWithLength:needs options:MTLResourceStorageModeShared];
             buffer->mappedData = (uint8_t *)buffer->mtlBuffer.contents;
             offset = 0;
         }
@@ -222,22 +204,6 @@ public:
         gpuBuffer->startOffset = offset;
         gpuBuffer->mappedData = buffer->mappedData + offset;
         buffer->curOffset = offset + gpuBuffer->size;
-    }
-
-    void updateInflightBuffer() {
-        if (_tripleEnabled) {
-            _inflightIndex = ((_inflightIndex + 1) % MAX_FRAMES_IN_FLIGHT);
-
-            size_t bufferCount = _pool.size();
-            Buffer *buffer = nullptr;
-            for (size_t idx = 0; idx < bufferCount; idx++) {
-                buffer = &_pool[idx];
-                id<MTLBuffer> prevFrameBuffer = buffer->mtlBuffer;
-                buffer->mtlBuffer = buffer->dynamicDataBuffers[_inflightIndex];
-                memcpy((uint8_t *)buffer->mtlBuffer.contents, prevFrameBuffer.contents, buffer->curOffset);
-                buffer->mappedData = (uint8_t *)buffer->mtlBuffer.contents;
-            }
-        }
     }
 
     void reset() {
@@ -260,13 +226,10 @@ public:
 protected:
     struct Buffer {
         id<MTLBuffer> mtlBuffer = nil;
-        ccstd::vector<id<MTLBuffer>> dynamicDataBuffers{MAX_FRAMES_IN_FLIGHT};
         uint8_t *mappedData = nullptr;
         uint32_t curOffset = 0;
     };
 
-    bool _tripleEnabled = false;
-    uint32_t _inflightIndex = 0;
     id<MTLDevice> _device = nil;
     ccstd::vector<Buffer> _pool;
 };
@@ -303,7 +266,7 @@ public:
     }
 
     void clear(uint8_t currentFrameIndex) {
-        CC_ASSERT(currentFrameIndex < MAX_FRAMES_IN_FLIGHT);
+        CC_ASSERT_LT(currentFrameIndex, MAX_FRAMES_IN_FLIGHT);
         while (!_releaseQueue[currentFrameIndex].empty()) {
             auto &&gcFunc = _releaseQueue[currentFrameIndex].front();
             gcFunc();

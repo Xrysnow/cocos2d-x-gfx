@@ -1,18 +1,17 @@
 /****************************************************************************
- Copyright (c) 2019-2022 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2019-2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated engine source code (the "Software"), a limited,
- worldwide, royalty-free, non-assignable, revocable and non-exclusive license
- to use Cocos Creator solely to develop games on your target platforms. You shall
- not use Cocos Creator software for developing other software or tools that's
- used for developing games. You are not granted to publish, distribute,
- sublicense, and/or sell copies of Cocos Creator.
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
 
- The software or tools in this License Agreement are licensed, not sold.
- Xiamen Yaji Software Co., Ltd. reserves all rights not expressly granted to you.
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
 
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -40,8 +39,31 @@ GLES2Shader::~GLES2Shader() {
     destroy();
 }
 
+namespace {
+
+void initGpuShader(GLES2GPUShader *gpuShader) {
+    cmdFuncGLES2CreateShader(GLES2Device::getInstance(), gpuShader);
+    CC_ASSERT(gpuShader->glProgram);
+
+    // Clear shader source after they're uploaded to GPU
+    for (auto &stage : gpuShader->gpuStages) {
+        stage.source.clear();
+        stage.source.shrink_to_fit();
+    }
+}
+
+} // namespace
+
+GLES2GPUShader *GLES2Shader::gpuShader() const {
+    if (!_gpuShader->glProgram) {
+        initGpuShader(_gpuShader);
+    }
+    return _gpuShader;
+}
+
 void GLES2Shader::doInit(const ShaderInfo & /*info*/) {
     _gpuShader = ccnew GLES2GPUShader;
+    CC_ASSERT(!_gpuShader->glProgram);
     _gpuShader->name = _name;
     _gpuShader->blocks = _blocks;
     _gpuShader->samplerTextures = _samplerTextures;
@@ -49,14 +71,6 @@ void GLES2Shader::doInit(const ShaderInfo & /*info*/) {
 
     for (const auto &stage : _stages) {
         _gpuShader->gpuStages.push_back({stage.stage, stage.source});
-    }
-
-    cmdFuncGLES2CreateShader(GLES2Device::getInstance(), _gpuShader);
-
-    // Clear shader source after they're uploaded to GPU
-    for (auto &stage : _gpuShader->gpuStages) {
-        stage.source.clear();
-        stage.source.shrink_to_fit();
     }
 
     for (auto &stage : _stages) {

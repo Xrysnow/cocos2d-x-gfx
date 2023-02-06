@@ -1,18 +1,17 @@
 /****************************************************************************
- Copyright (c) 2019-2022 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2019-2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
  Permission is hereby granted, free of charge, to any person obtaining a copy
- of this software and associated engine source code (the "Software"), a limited,
- worldwide, royalty-free, non-assignable, revocable and non-exclusive license
- to use Cocos Creator solely to develop games on your target platforms. You shall
- not use Cocos Creator software for developing other software or tools that's
- used for developing games. You are not granted to publish, distribute,
- sublicense, and/or sell copies of Cocos Creator.
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights to
+ use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ of the Software, and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
 
- The software or tools in this License Agreement are licensed, not sold.
- Xiamen Yaji Software Co., Ltd. reserves all rights not expressly granted to you.
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
 
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -116,7 +115,7 @@ bool GLES3Device::doInit(const DeviceInfo & /*info*/) {
 
     ccstd::string fbfLevelStr = "NONE";
     // PVRVFrame has issues on their support
-#if CC_PLATFORM != CC_PLATFORM_WINDOWS
+#if 0 // CC_PLATFORM != CC_PLATFORM_WINDOWS
     // TODO: enable fbf in the future, it is not implemented yet in gles3 backend
     if (checkExtension("framebuffer_fetch")) {
         ccstd::string nonCoherent = "framebuffer_fetch_non";
@@ -184,6 +183,8 @@ bool GLES3Device::doInit(const DeviceInfo & /*info*/) {
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, reinterpret_cast<GLint *>(&_caps.maxTextureSize));
     glGetIntegerv(GL_MAX_CUBE_MAP_TEXTURE_SIZE, reinterpret_cast<GLint *>(&_caps.maxCubeMapTextureSize));
     glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, reinterpret_cast<GLint *>(&_caps.uboOffsetAlignment));
+    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, reinterpret_cast<GLint *>(&_caps.maxArrayTextureLayers));
+    glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, reinterpret_cast<GLint *>(&_caps.max3DTextureSize));
 
     if (_gpuConstantRegistry->glMinorVersion) {
         glGetIntegerv(GL_MAX_IMAGE_UNITS, reinterpret_cast<GLint *>(&_caps.maxImageUnits));
@@ -228,10 +229,10 @@ bool GLES3Device::doInit(const DeviceInfo & /*info*/) {
 }
 
 void GLES3Device::doDestroy() {
-    CC_SAFE_DELETE(_gpuFramebufferCacheMap)
-    CC_SAFE_DELETE(_gpuConstantRegistry)
-    CC_SAFE_DELETE(_gpuFramebufferHub)
-    CC_SAFE_DELETE(_gpuStateCache)
+    CC_SAFE_DELETE(_gpuFramebufferCacheMap);
+    CC_SAFE_DELETE(_gpuConstantRegistry);
+    CC_SAFE_DELETE(_gpuFramebufferHub);
+    CC_SAFE_DELETE(_gpuStateCache);
 
     CC_ASSERT(!_memoryStatus.bufferSize);  // Buffer memory leaked
     CC_ASSERT(!_memoryStatus.textureSize); // Texture memory leaked
@@ -243,6 +244,8 @@ void GLES3Device::doDestroy() {
 }
 
 void GLES3Device::acquire(Swapchain *const *swapchains, uint32_t count) {
+    _gpuContext->makeCurrent();
+
     if (_onAcquire) _onAcquire->execute();
 
     _swapchains.clear();
