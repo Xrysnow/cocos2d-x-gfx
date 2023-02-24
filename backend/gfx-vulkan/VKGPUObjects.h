@@ -797,7 +797,7 @@ public:
         for (size_t idx = 0U; idx < bufferCount; idx++) {
             Buffer *cur = &_pool[idx];
             offset = roundUp(cur->curOffset, alignment);
-            if (CHUNK_SIZE - offset >= size) {
+            if (offset < CHUNK_SIZE && CHUNK_SIZE - offset >= size) {
                 buffer = cur;
                 break;
             }
