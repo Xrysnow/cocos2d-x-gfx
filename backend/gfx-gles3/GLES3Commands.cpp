@@ -1170,7 +1170,7 @@ void cmdFuncGLES3CreateShader(GLES3Device *device, GLES3GPUShader *gpuShader) {
     GL_CHECK(glGetProgramiv(gpuShader->glProgram, GL_ACTIVE_UNIFORM_BLOCKS, &blockCount));
 
     GLint bufferCount = 0;
-    if (device->constantRegistry()->glMinorVersion > 0) {
+    if (device->constantRegistry()->glMinorVersion > 0 && glGetProgramInterfaceiv) {
         GL_CHECK(glGetProgramInterfaceiv(gpuShader->glProgram, GL_SHADER_STORAGE_BLOCK, GL_ACTIVE_RESOURCES, &bufferCount));
     }
     GLint glActiveUniforms;
