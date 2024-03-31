@@ -45,6 +45,7 @@
 // #define CC_PLATFORM_WINRT             13
 #define CC_PLATFORM_MAC_IOS           CC_PLATFORM_IOS
 #define CC_PLATFORM_MAC_OSX           CC_PLATFORM_MAC
+#define CC_PLATFORM_MACOS             CC_PLATFORM_MAC
 #define CC_PLATFORM_OHOS              14
 #define CC_PLATFORM_QNX               15
 #define CC_PLATFORM_NX                16
