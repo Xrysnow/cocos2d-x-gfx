@@ -201,7 +201,7 @@ target_include_directories(${target_name} PUBLIC
 )
 
 target_link_libraries(${target_name} PUBLIC
-  spirv-cross-c spirv-cross-util spirv-cross-hlsl spirv-cross-msl spirv-cross-reflect spirv-cross-cpp spirv-cross-glsl spirv-cross-core SPVRemapper SPIRV HLSL glslang MachineIndependent OGLCompiler OSDependent GenericCodeGen
+  spirv-cross-c spirv-cross-util spirv-cross-hlsl spirv-cross-msl spirv-cross-reflect spirv-cross-cpp spirv-cross-glsl spirv-cross-core SPVRemapper SPIRV glslang MachineIndependent OSDependent GenericCodeGen glslang-default-resource-limits
 )
 
 if(WINDOWS)
