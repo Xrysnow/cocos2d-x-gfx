@@ -581,23 +581,14 @@ void cmdFuncGLES2ResizeBuffer(GLES2Device *device, GLES2GPUBuffer *gpuBuffer) {
 void cmdFuncGLES2CreateTexture(GLES2Device *device, GLES2GPUTexture *gpuTexture) {
     gpuTexture->glFormat = mapGLFormat(gpuTexture->format);
     gpuTexture->glType = formatToGLType(gpuTexture->format);
-    gpuTexture->glInternalFmt = gpuTexture->glFormat;
+    gpuTexture->glInternalFmt = mapGLInternalFormat(gpuTexture->format);
+    gpuTexture->glSamples = static_cast<GLint>(gpuTexture->samples);
 
-    if (gpuTexture->samples > SampleCount::ONE) {
-        if (device->constantRegistry()->mMSRT != MSRTSupportLevel::NONE) {
-            GLint maxSamples;
-            glGetIntegerv(GL_MAX_SAMPLES_EXT, &maxSamples);
-
-            auto requestedSampleCount = static_cast<GLint>(gpuTexture->samples);
-            gpuTexture->glSamples = std::min(maxSamples, requestedSampleCount);
-
-            // skip multi-sampled attachment resources if we can use auto resolve
-            if (gpuTexture->usage == TextureUsageBit::COLOR_ATTACHMENT) {
-                gpuTexture->memoryless = true;
-                return;
-            }
-        } else {
-            gpuTexture->glSamples = 1; // fallback to single sample if the extensions is not available
+    if (gpuTexture->samples > SampleCount::X1) {
+        if (device->constantRegistry()->mMSRT != MSRTSupportLevel::NONE &&
+            hasFlag(gpuTexture->flags, TextureFlagBit::LAZILY_ALLOCATED)) {
+            gpuTexture->memoryAllocated = false;
+            return;
         }
     }
 
@@ -818,7 +809,7 @@ void cmdFuncGLES2DestroyTexture(GLES2Device *device, GLES2GPUTexture *gpuTexture
 }
 
 void cmdFuncGLES2ResizeTexture(GLES2Device *device, GLES2GPUTexture *gpuTexture) {
-    if (gpuTexture->memoryless || gpuTexture->glTarget == GL_TEXTURE_EXTERNAL_OES) return;
+    if (!gpuTexture->memoryAllocated || gpuTexture->glTarget == GL_TEXTURE_EXTERNAL_OES) return;
 
     if (gpuTexture->glSamples <= 1) {
         switch (gpuTexture->type) {
@@ -1522,8 +1513,8 @@ static GLES2GPUFramebuffer::GLFramebufferInfo doCreateFramebuffer(GLES2Device *d
             GL_CHECK(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthStencil->glTarget, depthStencil->glTexture, 0));
             if (hasStencil) GL_CHECK(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, depthStencil->glTarget, depthStencil->glTexture, 0));
         } else {
-            GL_CHECK(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthStencil->glTarget, depthStencil->glTexture));
-            if (hasStencil) GL_CHECK(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, depthStencil->glTarget, depthStencil->glTexture));
+            GL_CHECK(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthStencil->glTarget, depthStencil->glRenderbuffer));
+            if (hasStencil) GL_CHECK(glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, depthStencil->glTarget, depthStencil->glRenderbuffer));
         }
 
         // fallback to blit-based manual resolve
@@ -3049,6 +3040,9 @@ void cmdFuncGLES2CopyTextureToBuffers(GLES2Device *device, GLES2GPUTexture *gpuT
     }
 }
 
+void cmdFuncGLES2CopyTexture(GLES2Device *device, GLES2GPUTexture *gpuTextureSrc, GLES2GPUTexture *gpuTextureDst, const TextureCopy *regions, uint32_t count) {
+}
+
 void cmdFuncGLES2BlitTexture(GLES2Device *device, GLES2GPUTexture *gpuTextureSrc, GLES2GPUTexture *gpuTextureDst, const TextureBlit *regions, uint32_t count, Filter filter) {
     GLES2GPUStateCache *cache = device->stateCache();
 
@@ -3117,6 +3111,30 @@ void cmdFuncGLES2ExecuteCmds(GLES2Device *device, GLES2CmdPackage *cmdPackage) {
                 break;
         }
         cmdIdx++;
+    }
+}
+
+GLint cmdFuncGLES2GetMaxSampleCount() {
+    GLint maxSamples = 1;
+    GL_CHECK(glGetIntegerv(GL_MAX_SAMPLES_EXT, &maxSamples));
+    return maxSamples;
+}
+
+void cmdFuncGLES2InsertMarker(GLES2Device *device, GLsizei length, const char *marker) {
+    if (device->constantRegistry()->debugMarker) {
+        glInsertEventMarkerEXT(length, marker);
+    }
+}
+
+void cmdFuncGLES2PushGroupMarker(GLES2Device *device, GLsizei length, const char *marker) {
+    if (device->constantRegistry()->debugMarker) {
+        glPushGroupMarkerEXT(length, marker);
+    }
+}
+
+void cmdFuncGLES2PopGroupMarker(GLES2Device *device) {
+    if (device->constantRegistry()->debugMarker) {
+        glPopGroupMarkerEXT();
     }
 }
 

@@ -28,6 +28,7 @@
 #include "base/memory/Memory.h"
 #include "base/std/container/string.h"
 #include "base/std/container/vector.h"
+#include "base/std/hash/hash.h"
 #include "math/Math.h"
 
 #ifdef Status
@@ -35,6 +36,8 @@
     // In /usr/include/X11/Xlib.h Status defined as int
     #undef Status
 #endif
+
+#define CC_USE_PIPELINE_CACHE 0
 
 /**
  * Some general guide lines:
@@ -96,6 +99,7 @@ using IndexList = ccstd::vector<uint32_t>;
 constexpr uint32_t MAX_ATTACHMENTS = 4U;
 constexpr uint32_t INVALID_BINDING = ~0U;
 constexpr uint32_t SUBPASS_EXTERNAL = ~0U;
+constexpr ccstd::hash_t INVALID_SHADER_HASH = 0xFFFFFFFFU;
 
 // Although the standard is not limited, some devices do not support up to 65536 queries
 constexpr uint32_t DEFAULT_MAX_QUERY_OBJECTS = 32767;
@@ -170,21 +174,13 @@ enum class Feature : uint32_t {
     MULTIPLE_RENDER_TARGETS,
     BLEND_MINMAX,
     COMPUTE_SHADER,
-    // This flag indicates whether the device can benefit from subpass-style usages.
-    // Specifically, this only differs on the GLES backends: the Framebuffer Fetch
-    // extension is used to simulate input attachments, so the flag is not set when
-    // the extension is not supported, and you should switch to the fallback branch
-    // (without the extension requirement) in GLSL shader sources accordingly.
-    // Everything else can remain the same.
-    //
-    // Another caveat when using the Framebuffer Fetch extensions in shaders is that
-    // for subpasses with exactly 4 inout attachments the output is automatically set
-    // to the last attachment (taking advantage of 'inout' property), and a separate
-    // blit operation (if needed) will be added for you afterwards to transfer the
-    // rendering result to the correct subpass output texture. This is to ameliorate
-    // the max number of attachment limit(4) situation for many devices, and shader
-    // sources inside this kind of subpass must match this behavior.
-    INPUT_ATTACHMENT_BENEFIT,
+
+    INPUT_ATTACHMENT_BENEFIT, // @deprecated
+    SUBPASS_COLOR_INPUT,
+    SUBPASS_DEPTH_STENCIL_INPUT,
+    RASTERIZATION_ORDER_NOCOHERENT,
+
+    MULTI_SAMPLE_RESOLVE_DEPTH_STENCIL,   // resolve depth stencil
     COUNT,
 };
 CC_ENUM_CONVERSION_OPERATOR(Feature);
@@ -471,14 +467,20 @@ enum class TextureUsageBit : uint32_t {
     COLOR_ATTACHMENT = 0x10,
     DEPTH_STENCIL_ATTACHMENT = 0x20,
     INPUT_ATTACHMENT = 0x40,
+    SHADING_RATE = 0x80,
 };
 using TextureUsage = TextureUsageBit;
 CC_ENUM_BITWISE_OPERATORS(TextureUsageBit);
 
 enum class TextureFlagBit : uint32_t {
     NONE = 0,
-    GEN_MIPMAP = 0x1,     // Generate mipmaps using bilinear filter
-    GENERAL_LAYOUT = 0x2, // For inout framebuffer attachments
+    GEN_MIPMAP = 0x1,           // Generate mipmaps using bilinear filter
+    GENERAL_LAYOUT = 0x2,       // @deprecated, For inout framebuffer attachments
+    EXTERNAL_OES = 0x4,         // External oes texture
+    EXTERNAL_NORMAL = 0x8,      // External normal texture
+    LAZILY_ALLOCATED = 0x10,    // Try lazily allocated mode.
+    MUTABLE_VIEW_FORMAT = 0x40, // texture view as different format
+    MUTABLE_STORAGE = 0x80,     // mutable storage for gl image
 };
 using TextureFlags = TextureFlagBit;
 CC_ENUM_BITWISE_OPERATORS(TextureFlagBit);
@@ -490,15 +492,19 @@ enum class FormatFeatureBit : uint32_t {
     LINEAR_FILTER = 0x4,     // Allow linear filtering when sampling in shaders or blitting
     STORAGE_TEXTURE = 0x8,   // Allow storage reads & writes in shaders
     VERTEX_ATTRIBUTE = 0x10, // Allow usages as vertex input attributes
+    SHADING_RATE = 0x20,     // Allow usages as shading rate
 };
 using FormatFeature = FormatFeatureBit;
 CC_ENUM_BITWISE_OPERATORS(FormatFeatureBit);
 
 enum class SampleCount : uint32_t {
-    ONE,                  // Single sample
-    MULTIPLE_PERFORMANCE, // Multiple samples prioritizing performance over quality
-    MULTIPLE_BALANCE,     // Multiple samples leveraging both quality and performance
-    MULTIPLE_QUALITY,     // Multiple samples prioritizing quality over performance
+    X1  = 0x01,
+    X2  = 0x02,
+    X4  = 0x04,
+    X8  = 0x08,
+    X16 = 0x10,
+    X32 = 0x20,
+    X64 = 0x40
 };
 CC_ENUM_CONVERSION_OPERATOR(SampleCount);
 
@@ -664,6 +670,8 @@ enum class AccessFlagBit : uint32_t {
     TRANSFER_WRITE = 1 << 24,                 // Written as the destination of a transfer operation
     HOST_PREINITIALIZED = 1 << 25,            // Data pre-filled by host before device access starts
     HOST_WRITE = 1 << 26,                     // Written on the host
+
+    SHADING_RATE = 1 << 27, // Read as a shading rate image
 };
 CC_ENUM_BITWISE_OPERATORS(AccessFlagBit);
 using AccessFlags = AccessFlagBit;
@@ -844,6 +852,8 @@ struct DeviceCaps {
     Size maxComputeWorkGroupCount;
 
     bool supportQuery{false};
+    bool supportVariableRateShading{false};
+    bool supportSubPassShading{false};
 
     float clipSpaceMinZ{-1.F};
     float screenSpaceSignY{1.F};
@@ -956,6 +966,11 @@ struct Color {
 };
 using ColorList = ccstd::vector<Color>;
 
+struct MarkerInfo {
+    ccstd::string name;
+    Color color;
+};
+
 struct BindingMappingInfo {
     /**
      * For non-vulkan backends, to maintain compatibility and maximize
@@ -1063,7 +1078,7 @@ struct ALIGNAS(8) TextureInfo {
     TextureFlags flags{TextureFlagBit::NONE};
     uint32_t layerCount{1};
     uint32_t levelCount{1};
-    SampleCount samples{SampleCount::ONE};
+    SampleCount samples{SampleCount::X1};
     uint32_t depth{1};
     void *externalRes{nullptr}; // CVPixelBuffer for Metal, EGLImage for GLES
 #if CC_CPU_ARCH == CC_CPU_ARCH_32
@@ -1081,6 +1096,8 @@ struct ALIGNAS(8) TextureViewInfo {
     uint32_t levelCount{1};
     uint32_t baseLayer{0};
     uint32_t layerCount{1};
+    uint32_t basePlane{0};
+    uint32_t planeCount{1};
 #if CC_CPU_ARCH == CC_CPU_ARCH_32
     uint32_t _padding{0};
 #endif
@@ -1255,6 +1272,7 @@ struct ShaderInfo {
     UniformTextureList textures;
     UniformStorageImageList images;
     UniformInputAttachmentList subpassInputs;
+    ccstd::hash_t hash = INVALID_SHADER_HASH;
 
     EXPOSE_COPY_FN(ShaderInfo)
 };
@@ -1270,14 +1288,10 @@ struct InputAssemblerInfo {
 
 struct ALIGNAS(8) ColorAttachment {
     Format format{Format::UNKNOWN};
-    SampleCount sampleCount{SampleCount::ONE};
+    SampleCount sampleCount{SampleCount::X1};
     LoadOp loadOp{LoadOp::CLEAR};
     StoreOp storeOp{StoreOp::STORE};
     GeneralBarrier *barrier{nullptr};
-    uint32_t isGeneralLayout{0}; // @ts-boolean
-#if CC_CPU_ARCH == CC_CPU_ARCH_64
-    uint32_t _padding{0};
-#endif
 
     EXPOSE_COPY_FN(ColorAttachment)
 };
@@ -1286,16 +1300,12 @@ using ColorAttachmentList = ccstd::vector<ColorAttachment>;
 
 struct ALIGNAS(8) DepthStencilAttachment {
     Format format{Format::UNKNOWN};
-    SampleCount sampleCount{SampleCount::ONE};
+    SampleCount sampleCount{SampleCount::X1};
     LoadOp depthLoadOp{LoadOp::CLEAR};
     StoreOp depthStoreOp{StoreOp::STORE};
     LoadOp stencilLoadOp{LoadOp::CLEAR};
     StoreOp stencilStoreOp{StoreOp::STORE};
     GeneralBarrier *barrier{nullptr};
-    uint32_t isGeneralLayout{0}; // @ts-boolean
-#if CC_CPU_ARCH == CC_CPU_ARCH_64
-    uint32_t _padding{0};
-#endif
 
     EXPOSE_COPY_FN(DepthStencilAttachment)
 };
@@ -1308,6 +1318,7 @@ struct SubpassInfo {
 
     uint32_t depthStencil{INVALID_BINDING};
     uint32_t depthStencilResolve{INVALID_BINDING};
+    uint32_t shadingRate{INVALID_BINDING};
     ResolveMode depthResolveMode{ResolveMode::NONE};
     ResolveMode stencilResolveMode{ResolveMode::NONE};
 
@@ -1320,15 +1331,9 @@ struct ALIGNAS(8) SubpassDependency {
     uint32_t srcSubpass{0};
     uint32_t dstSubpass{0};
     GeneralBarrier *generalBarrier{nullptr};
-    BufferBarrier **bufferBarriers{nullptr};
-    Buffer **buffers{nullptr};
-    uint32_t bufferBarrierCount{0};
-    TextureBarrier **textureBarriers{nullptr};
-    Texture **textures{nullptr};
-    uint32_t textureBarrierCount{0};
-#if CC_CPU_ARCH == CC_CPU_ARCH_32
-    uint32_t _padding{0};
-#endif
+
+    AccessFlags prevAccesses{};
+    AccessFlags nextAccesses{};
 
     EXPOSE_COPY_FN(SubpassDependency)
 };
@@ -1338,10 +1343,23 @@ using SubpassDependencyList = ccstd::vector<SubpassDependency>;
 struct RenderPassInfo {
     ColorAttachmentList colorAttachments;
     DepthStencilAttachment depthStencilAttachment;
+    DepthStencilAttachment depthStencilResolveAttachment;
     SubpassInfoList subpasses;
     SubpassDependencyList dependencies;
 
     EXPOSE_COPY_FN(RenderPassInfo)
+};
+
+struct ResourceRange {
+    uint32_t width{0};
+    uint32_t height{0};
+    uint32_t depthOrArraySize{0};
+    uint32_t firstSlice{0};
+    uint32_t numSlices{0};
+    uint32_t mipLevel{0};
+    uint32_t levelCount{0};
+    uint32_t basePlane{0};
+    uint32_t planeCount{0};
 };
 
 struct ALIGNAS(8) GeneralBarrierInfo {
@@ -1361,11 +1379,7 @@ struct ALIGNAS(8) TextureBarrierInfo {
 
     BarrierType type{BarrierType::FULL};
 
-    uint32_t baseMipLevel{0};
-    uint32_t levelCount{1};
-    uint32_t baseSlice{0};
-    uint32_t sliceCount{1};
-
+    ResourceRange range{};
     uint64_t discardContents{0}; // @ts-boolean
 
     Queue *srcQueue{nullptr}; // @ts-nullable
@@ -1397,6 +1411,7 @@ struct FramebufferInfo {
     RenderPass *renderPass{nullptr};
     TextureList colorTextures;
     Texture *depthStencilTexture{nullptr}; // @ts-nullable
+    Texture *depthStencilResolveTexture{nullptr}; // @ts-nullable
 
     EXPOSE_COPY_FN(FramebufferInfo)
 };
@@ -1419,7 +1434,7 @@ struct DescriptorSetLayoutInfo {
 };
 
 struct DescriptorSetInfo {
-    DescriptorSetLayout *layout{nullptr};
+    const DescriptorSetLayout *layout{nullptr};
 
     EXPOSE_COPY_FN(DescriptorSetInfo)
 };
@@ -1515,7 +1530,7 @@ struct BlendState {
 
     void setTarget(index_t index, const BlendTarget &target) {
         if (index >= targets.size()) {
-            targets.resize(index + 1);
+            targets.resize(static_cast<size_t>(index) + 1);
         }
         targets[index] = target;
     }

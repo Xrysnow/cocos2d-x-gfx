@@ -54,18 +54,26 @@ void FramebufferValidator::doInit(const FramebufferInfo &info) {
     if (info.renderPass->getDepthStencilAttachment().format != Format::UNKNOWN) {
         CC_ASSERT(info.depthStencilTexture);
     }
+    if (info.renderPass->getDepthStencilResolveAttachment().format != Format::UNKNOWN) {
+        CC_ASSERT(info.depthStencilResolveTexture);
+    }
 
     for (uint32_t i = 0U; i < info.colorTextures.size(); ++i) {
         const auto &desc = info.renderPass->getColorAttachments()[i];
         const auto *tex = info.colorTextures[i];
         CC_ASSERT(tex && static_cast<const TextureValidator *>(tex)->isInited());
-        CC_ASSERT(hasAnyFlags(tex->getInfo().usage, TextureUsageBit::COLOR_ATTACHMENT | TextureUsageBit::DEPTH_STENCIL_ATTACHMENT));
+        CC_ASSERT(hasAnyFlags(tex->getInfo().usage, TextureUsageBit::COLOR_ATTACHMENT | TextureUsageBit::DEPTH_STENCIL_ATTACHMENT | TextureUsageBit::SHADING_RATE));
         CC_ASSERT(tex->getFormat() == desc.format);
     }
     if (info.depthStencilTexture) {
         CC_ASSERT(static_cast<TextureValidator *>(info.depthStencilTexture)->isInited());
         CC_ASSERT(hasFlag(info.depthStencilTexture->getInfo().usage, TextureUsageBit::DEPTH_STENCIL_ATTACHMENT));
         CC_ASSERT(info.depthStencilTexture->getFormat() == info.renderPass->getDepthStencilAttachment().format);
+    }
+    if (info.depthStencilResolveTexture) {
+        CC_ASSERT(static_cast<TextureValidator *>(info.depthStencilResolveTexture)->isInited());
+        CC_ASSERT(hasFlag(info.depthStencilResolveTexture->getInfo().usage, TextureUsageBit::DEPTH_STENCIL_ATTACHMENT));
+        CC_ASSERT(info.depthStencilResolveTexture->getFormat() == info.renderPass->getDepthStencilResolveAttachment().format);
     }
 
     /////////// execute ///////////
@@ -78,6 +86,9 @@ void FramebufferValidator::doInit(const FramebufferInfo &info) {
     }
     if (info.depthStencilTexture) {
         actorInfo.depthStencilTexture = static_cast<TextureValidator *>(info.depthStencilTexture)->getActor();
+    }
+    if (info.depthStencilResolveTexture) {
+        actorInfo.depthStencilResolveTexture = static_cast<TextureValidator *>(info.depthStencilResolveTexture)->getActor();
     }
     actorInfo.renderPass = static_cast<RenderPassValidator *>(info.renderPass)->getActor();
 

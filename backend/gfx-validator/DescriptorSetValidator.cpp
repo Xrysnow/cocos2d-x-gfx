@@ -48,12 +48,12 @@ DescriptorSetValidator::~DescriptorSetValidator() {
 void DescriptorSetValidator::doInit(const DescriptorSetInfo &info) {
     CC_ASSERT(!isInited());
     _inited = true;
-    CC_ASSERT(info.layout && static_cast<DescriptorSetLayoutValidator *>(info.layout)->isInited());
+    CC_ASSERT(info.layout && static_cast<const DescriptorSetLayoutValidator *>(info.layout)->isInited());
 
     /////////// execute ///////////
 
     DescriptorSetInfo actorInfo;
-    actorInfo.layout = static_cast<DescriptorSetLayoutValidator *>(info.layout)->getActor();
+    actorInfo.layout = static_cast<const DescriptorSetLayoutValidator *>(info.layout)->getActor();
 
     _actor->initialize(actorInfo);
 }
@@ -113,7 +113,7 @@ void DescriptorSetValidator::updateReferenceStamp() {
     _referenceStamp = DeviceValidator::getInstance()->currentFrame();
 }
 
-void DescriptorSetValidator::bindBuffer(uint32_t binding, Buffer *buffer, uint32_t index) {
+void DescriptorSetValidator::bindBuffer(uint32_t binding, Buffer *buffer, uint32_t index, AccessFlags flags) {
     CC_ASSERT(isInited());
     auto *vBuffer = static_cast<BufferValidator *>(buffer);
     CC_ASSERT(buffer && vBuffer->isInited());
@@ -139,12 +139,12 @@ void DescriptorSetValidator::bindBuffer(uint32_t binding, Buffer *buffer, uint32
 
     /////////// execute ///////////
 
-    DescriptorSet::bindBuffer(binding, buffer, index);
+    DescriptorSet::bindBuffer(binding, buffer, index, flags);
 
-    _actor->bindBuffer(binding, vBuffer->getActor(), index);
+    _actor->bindBuffer(binding, vBuffer->getActor(), index, flags);
 }
 
-void DescriptorSetValidator::bindTexture(uint32_t binding, Texture *texture, uint32_t index) {
+void DescriptorSetValidator::bindTexture(uint32_t binding, Texture *texture, uint32_t index, AccessFlags flags) {
     CC_ASSERT(isInited());
     CC_ASSERT(texture && static_cast<TextureValidator *>(texture)->isInited());
 
@@ -165,9 +165,9 @@ void DescriptorSetValidator::bindTexture(uint32_t binding, Texture *texture, uin
 
     /////////// execute ///////////
 
-    DescriptorSet::bindTexture(binding, texture, index);
+    DescriptorSet::bindTexture(binding, texture, index, flags);
 
-    _actor->bindTexture(binding, static_cast<TextureValidator *>(texture)->getActor(), index);
+    _actor->bindTexture(binding, static_cast<TextureValidator *>(texture)->getActor(), index, flags);
 }
 
 void DescriptorSetValidator::bindSampler(uint32_t binding, Sampler *sampler, uint32_t index) {

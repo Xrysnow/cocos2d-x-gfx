@@ -61,11 +61,21 @@ bool operator==(const DepthStencilAttachment &lhs, const DepthStencilAttachment 
 
 template <>
 ccstd::hash_t Hasher<SubpassDependency>::operator()(const SubpassDependency &info) const {
-    return quickHashTrivialStruct(&info);
+    ccstd::hash_t seed = 8;
+    ccstd::hash_combine(seed, info.dstSubpass);
+    ccstd::hash_combine(seed, info.srcSubpass);
+    ccstd::hash_combine(seed, info.generalBarrier);
+    ccstd::hash_combine(seed, info.prevAccesses);
+    ccstd::hash_combine(seed, info.nextAccesses);
+    return seed;
 }
 
 bool operator==(const SubpassDependency &lhs, const SubpassDependency &rhs) {
-    return !memcmp(&lhs, &rhs, sizeof(SubpassDependency));
+    return lhs.srcSubpass == rhs.srcSubpass &&
+           lhs.dstSubpass == rhs.dstSubpass &&
+           lhs.generalBarrier == rhs.generalBarrier &&
+           lhs.prevAccesses == rhs.prevAccesses &&
+           lhs.nextAccesses == rhs.nextAccesses;
 }
 
 template <>
@@ -98,6 +108,7 @@ ccstd::hash_t Hasher<RenderPassInfo>::operator()(const RenderPassInfo &info) con
     ccstd::hash_t seed = 4;
     ccstd::hash_combine(seed, info.colorAttachments);
     ccstd::hash_combine(seed, info.depthStencilAttachment);
+    ccstd::hash_combine(seed, info.depthStencilResolveAttachment);
     ccstd::hash_combine(seed, info.subpasses);
     ccstd::hash_combine(seed, info.dependencies);
     return seed;
@@ -106,6 +117,7 @@ ccstd::hash_t Hasher<RenderPassInfo>::operator()(const RenderPassInfo &info) con
 bool operator==(const RenderPassInfo &lhs, const RenderPassInfo &rhs) {
     return lhs.colorAttachments == rhs.colorAttachments &&
            lhs.depthStencilAttachment == rhs.depthStencilAttachment &&
+           lhs.depthStencilResolveAttachment == rhs.depthStencilResolveAttachment &&
            lhs.subpasses == rhs.subpasses &&
            lhs.dependencies == rhs.dependencies;
 }
@@ -113,18 +125,19 @@ bool operator==(const RenderPassInfo &lhs, const RenderPassInfo &rhs) {
 template <>
 ccstd::hash_t Hasher<FramebufferInfo>::operator()(const FramebufferInfo &info) const {
     // render pass is mostly irrelevant
-    ccstd::hash_t seed;
+    ccstd::hash_t seed = static_cast<ccstd::hash_t>(info.colorTextures.size()) +
+                         static_cast<ccstd::hash_t>(info.depthStencilTexture != nullptr) +
+                         static_cast<ccstd::hash_t>(info.depthStencilResolveTexture != nullptr);
     if (info.depthStencilTexture) {
-        seed = (static_cast<uint32_t>(info.colorTextures.size()) + 1) * 3 + 1;
-        ccstd::hash_combine(seed, info.depthStencilTexture);
-        ccstd::hash_combine(seed, info.depthStencilTexture->getRaw());
+        ccstd::hash_combine(seed, info.depthStencilTexture->getObjectID());
         ccstd::hash_combine(seed, info.depthStencilTexture->getHash());
-    } else {
-        seed = static_cast<uint32_t>(info.colorTextures.size()) * 3 + 1;
+    }
+    if (info.depthStencilResolveTexture) {
+        ccstd::hash_combine(seed, info.depthStencilResolveTexture->getObjectID());
+        ccstd::hash_combine(seed, info.depthStencilResolveTexture->getHash());
     }
     for (auto *colorTexture : info.colorTextures) {
-        ccstd::hash_combine(seed, colorTexture);
-        ccstd::hash_combine(seed, colorTexture->getRaw());
+        ccstd::hash_combine(seed, colorTexture->getObjectID());
         ccstd::hash_combine(seed, colorTexture->getHash());
     }
     ccstd::hash_combine(seed, info.renderPass->getHash());
@@ -138,6 +151,10 @@ bool operator==(const FramebufferInfo &lhs, const FramebufferInfo &rhs) {
 
     if (res) {
         res = lhs.depthStencilTexture == rhs.depthStencilTexture;
+    }
+
+    if (res) {
+        res = lhs.depthStencilResolveTexture == rhs.depthStencilResolveTexture;
     }
 
     if (res) {

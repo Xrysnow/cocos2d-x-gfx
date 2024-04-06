@@ -38,6 +38,7 @@ class GLES3GPUStateCache;
 class GLES3GPUFramebufferHub;
 struct GLES3GPUConstantRegistry;
 class GLES3GPUFramebufferCacheMap;
+class GLES3PipelineCache;
 
 class CC_GLES3_API GLES3Device final : public Device {
 public:
@@ -64,6 +65,7 @@ public:
     using Device::createTexture;
     using Device::createTextureBarrier;
 
+    void frameSync() override{};
     void acquire(Swapchain *const *swapchains, uint32_t count) override;
     void present() override;
 
@@ -74,6 +76,7 @@ public:
     inline GLES3GPUFramebufferHub *framebufferHub() const { return _gpuFramebufferHub; }
     inline GLES3GPUConstantRegistry *constantRegistry() const { return _gpuConstantRegistry; }
     inline GLES3GPUFramebufferCacheMap *framebufferCacheMap() const { return _gpuFramebufferCacheMap; }
+    inline GLES3PipelineCache *pipelineCache() const { return _pipelineCache.get(); }
 
     inline bool checkExtension(const ccstd::string &extension) const {
         return std::any_of(_extensions.begin(), _extensions.end(), [&extension](auto &ext) {
@@ -91,8 +94,8 @@ public:
         return _stagingBuffer;
     }
 
-    inline bool isTextureExclusive(const Format &format) { return _textureExclusive[static_cast<size_t>(format)]; };
-
+    inline bool isTextureExclusive(const Format &format) const { return _textureExclusive[static_cast<size_t>(format)]; };
+    SampleCount getMaxSampleCount(Format format, TextureUsage usage, TextureFlags flags) const override;
 protected:
     static GLES3Device *instance;
 
@@ -133,6 +136,7 @@ protected:
     GLES3GPUFramebufferHub *_gpuFramebufferHub{nullptr};
     GLES3GPUConstantRegistry *_gpuConstantRegistry{nullptr};
     GLES3GPUFramebufferCacheMap *_gpuFramebufferCacheMap{nullptr};
+    std::unique_ptr<GLES3PipelineCache> _pipelineCache;
 
     ccstd::vector<GLES3GPUSwapchain *> _swapchains;
 

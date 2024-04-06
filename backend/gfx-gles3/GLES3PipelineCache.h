@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2019-2023 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
@@ -22,4 +22,42 @@
  THE SOFTWARE.
 ****************************************************************************/
 
-#include "GLES3Std.h"
+#pragma once
+
+#include "GLES3GPUObjects.h"
+#include "base/Ptr.h"
+#include "base/RefCounted.h"
+#include "base/std/container/string.h"
+#include "base/std/container/unordered_map.h"
+#include "base/std/container/vector.h"
+
+namespace cc {
+class BinaryOutputArchive;
+}
+
+namespace cc::gfx {
+struct GLES3GPUShader;
+
+class GLES3PipelineCache : public RefCounted {
+public:
+    GLES3PipelineCache();
+    ~GLES3PipelineCache() override;
+
+    void init();
+
+    void addBinary(GLES3GPUProgramBinary *binary);
+    GLES3GPUProgramBinary *fetchBinary(const ccstd::string &key, ccstd::hash_t hash);
+    bool checkProgramFormat(GLuint format) const;
+
+private:
+    bool loadCache();
+    void saveCacheFull();
+    void saveCacheIncremental(GLES3GPUProgramBinary *binary);
+
+    ccstd::vector<GLint> _programBinaryFormats;
+    ccstd::unordered_map<ccstd::string, IntrusivePtr<GLES3GPUProgramBinary>> _programCaches;
+    ccstd::string _savePath;
+    bool _dirty = false;
+};
+
+} // namespace cc::gfx

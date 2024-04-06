@@ -231,6 +231,12 @@ void cmdFuncGLES2CopyTextureToBuffers(GLES2Device *device,
                                       const BufferTextureCopy *regions,
                                       uint32_t count);
 
+void cmdFuncGLES2CopyTexture(GLES2Device *device,
+                             GLES2GPUTexture *gpuTextureSrc,
+                             GLES2GPUTexture *gpuTextureDst,
+                             const TextureCopy *regions,
+                             uint32_t count);
+
 void cmdFuncGLES2BlitTexture(GLES2Device *device,
                              GLES2GPUTexture *gpuTextureSrc,
                              GLES2GPUTexture *gpuTextureDst,
@@ -239,6 +245,12 @@ void cmdFuncGLES2BlitTexture(GLES2Device *device,
                              Filter filter);
 
 void cmdFuncGLES2ExecuteCmds(GLES2Device *device, GLES2CmdPackage *cmdPackage);
+
+void cmdFuncGLES2InsertMarker(GLES2Device *device, GLsizei length, const char *marker);
+void cmdFuncGLES2PushGroupMarker(GLES2Device *device, GLsizei length, const char *marker);
+void cmdFuncGLES2PopGroupMarker(GLES2Device *device);
+
+GLint cmdFuncGLES2GetMaxSampleCount();
 
 } // namespace gfx
 } // namespace cc

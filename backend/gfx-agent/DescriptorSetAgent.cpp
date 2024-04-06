@@ -50,7 +50,7 @@ DescriptorSetAgent::~DescriptorSetAgent() {
 
 void DescriptorSetAgent::doInit(const DescriptorSetInfo &info) {
     DescriptorSetInfo actorInfo;
-    actorInfo.layout = static_cast<DescriptorSetLayoutAgent *>(info.layout)->getActor();
+    actorInfo.layout = static_cast<const DescriptorSetLayoutAgent *>(info.layout)->getActor();
 
     ENQUEUE_MESSAGE_2(
         DeviceAgent::getInstance()->getMessageQueue(),
@@ -98,33 +98,35 @@ void DescriptorSetAgent::forceUpdate() {
         });
 }
 
-void DescriptorSetAgent::bindBuffer(uint32_t binding, Buffer *buffer, uint32_t index) {
-    DescriptorSet::bindBuffer(binding, buffer, index);
+void DescriptorSetAgent::bindBuffer(uint32_t binding, Buffer *buffer, uint32_t index, AccessFlags flags) {
+    DescriptorSet::bindBuffer(binding, buffer, index, flags);
 
-    ENQUEUE_MESSAGE_4(
+    ENQUEUE_MESSAGE_5(
         DeviceAgent::getInstance()->getMessageQueue(),
         DescriptorSetBindBuffer,
         actor, getActor(),
         binding, binding,
         buffer, static_cast<BufferAgent *>(buffer)->getActor(),
         index, index,
+        flags, flags,
         {
-            actor->bindBuffer(binding, buffer, index);
+            actor->bindBuffer(binding, buffer, index, flags);
         });
 }
 
-void DescriptorSetAgent::bindTexture(uint32_t binding, Texture *texture, uint32_t index) {
-    DescriptorSet::bindTexture(binding, texture, index);
+void DescriptorSetAgent::bindTexture(uint32_t binding, Texture *texture, uint32_t index, AccessFlags flags) {
+    DescriptorSet::bindTexture(binding, texture, index, flags);
 
-    ENQUEUE_MESSAGE_4(
+    ENQUEUE_MESSAGE_5(
         DeviceAgent::getInstance()->getMessageQueue(),
         DescriptorSetBindTexture,
         actor, getActor(),
         binding, binding,
         texture, static_cast<TextureAgent *>(texture)->getActor(),
         index, index,
+        flags, flags,
         {
-            actor->bindTexture(binding, texture, index);
+            actor->bindTexture(binding, texture, index, flags);
         });
 }
 

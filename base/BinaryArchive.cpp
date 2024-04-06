@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2020-2023 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
@@ -22,38 +22,25 @@
  THE SOFTWARE.
 ****************************************************************************/
 
-#pragma once
-
-#include "base/Agent.h"
-#include "gfx-base/GFXDescriptorSet.h"
+#include "BinaryArchive.h"
+#include "base/Assertf.h"
 
 namespace cc {
-namespace gfx {
 
-class CC_DLL DescriptorSetValidator final : public Agent<DescriptorSet> {
-public:
-    explicit DescriptorSetValidator(DescriptorSet *actor);
-    ~DescriptorSetValidator() override;
+bool BinaryInputArchive::load(char *data, uint32_t size) {
+    CC_ASSERT(!!_stream);
+    return _stream.rdbuf()->sgetn(data, size) == size;
+}
 
-    void update() override;
-    void forceUpdate() override;
+void BinaryInputArchive::move(uint32_t length) {
+    CC_ASSERT(!!_stream);
+    _stream.ignore(length);
+}
 
-    void bindBuffer(uint32_t binding, Buffer *buffer, uint32_t index, AccessFlags flags) override;
-    void bindTexture(uint32_t binding, Texture *texture, uint32_t index, AccessFlags flags) override;
-    void bindSampler(uint32_t binding, Sampler *sampler, uint32_t index) override;
+void BinaryOutputArchive::save(const char *data, uint32_t size) {
+    CC_ASSERT(!!_stream);
+    auto len = _stream.rdbuf()->sputn(data, size);
+    CC_ASSERT(len == size);
+}
 
-    void updateReferenceStamp();
-
-    inline bool isInited() const { return _inited; }
-
-protected:
-    void doInit(const DescriptorSetInfo &info) override;
-    void doDestroy() override;
-
-    uint64_t _referenceStamp{0U};
-
-    bool _inited{false};
-};
-
-} // namespace gfx
 } // namespace cc

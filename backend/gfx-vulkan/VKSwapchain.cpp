@@ -153,8 +153,38 @@ void CCVKSwapchain::doInit(const SwapchainInfo &info) {
         }
 #endif
 
+        #if 1
+        auto msgPresentMode = "?";
+        switch (swapchainPresentMode)
+        {
+        case VK_PRESENT_MODE_IMMEDIATE_KHR:
+            msgPresentMode = "IMMEDIATE";
+            break;
+        case VK_PRESENT_MODE_MAILBOX_KHR:
+            msgPresentMode = "MAILBOX";
+            break;
+        case VK_PRESENT_MODE_FIFO_KHR:
+            msgPresentMode = "FIFO";
+            break;
+        case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+            msgPresentMode = "FIFO_RELAXED";
+            break;
+        case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR:
+            msgPresentMode = "SHARED_DEMAND_REFRESH";
+            break;
+        case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR:
+            msgPresentMode = "SHARED_CONTINUOUS_REFRESH";
+            break;
+        case VK_PRESENT_MODE_MAX_ENUM_KHR:
+            break;
+        default: ;
+        }
+        CC_LOG_INFO("Swapchain present mode is %s", msgPresentMode);
+        #endif
+
         // Determine the number of images
         uint32_t desiredNumberOfSwapchainImages = std::max(gpuDevice->backBufferCount, surfaceCapabilities.minImageCount);
+        CC_LOG_INFO("Swapchain desired image count is %d", desiredNumberOfSwapchainImages);
 
         VkExtent2D imageExtent = {1U, 1U};
 
@@ -213,9 +243,11 @@ void CCVKSwapchain::doInit(const SwapchainInfo &info) {
     initTexture(textureInfo, _depthStencilTexture);
 
 #if CC_PLATFORM == CC_PLATFORM_ANDROID
-    auto *window = CC_GET_SYSTEM_WINDOW(_windowId);
-    auto viewSize = window->getViewSize();
-    checkSwapchainStatus(viewSize.width, viewSize.height);
+    //TODO: get viwe size
+    //auto *window = CC_GET_SYSTEM_WINDOW(_windowId);
+    //auto viewSize = window->getViewSize();
+    //checkSwapchainStatus(viewSize.width, viewSize.height);
+    checkSwapchainStatus();
 #else
     checkSwapchainStatus();
 #endif
@@ -409,9 +441,11 @@ void CCVKSwapchain::doCreateSurface(void *windowHandle) { // NOLINT
     if (!_gpuSwapchain || _gpuSwapchain->vkSurface != VK_NULL_HANDLE) return;
     createVkSurface();
 #if CC_PLATFORM == CC_PLATFORM_ANDROID
-    auto *window = CC_GET_SYSTEM_WINDOW(_windowId);
-    auto viewSize = window->getViewSize();
-    checkSwapchainStatus(viewSize.width, viewSize.height);
+    //TODO: get viwe size
+    //auto *window = CC_GET_SYSTEM_WINDOW(_windowId);
+    //auto viewSize = window->getViewSize();
+    //checkSwapchainStatus(viewSize.width, viewSize.height);
+    checkSwapchainStatus();
 #else
     checkSwapchainStatus();
 #endif
@@ -433,10 +467,10 @@ void CCVKSwapchain::createVkSurface() {
     VkViSurfaceCreateInfoNN surfaceCreateInfo{VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN};
     surfaceCreateInfo.window = _windowHandle;
     VK_CHECK(vkCreateViSurfaceNN(gpuContext->vkInstance, &surfaceCreateInfo, nullptr, &_gpuSwapchain->vkSurface));
-#elif defined(VK_USE_PLATFORM_METAL_EXT)
-    VkMetalSurfaceCreateInfoEXT surfaceCreateInfo{VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT};
-    surfaceCreateInfo.pLayer = reinterpret_cast<CAMetalLayer *>(_windowHandle);
-    VK_CHECK(vkCreateMetalSurfaceEXT(gpuContext->vkInstance, &surfaceCreateInfo, nullptr, &_gpuSwapchain->vkSurface));
+#elif defined(VK_USE_PLATFORM_MACOS_MVK)
+    VkMacOSSurfaceCreateInfoMVK surfaceCreateInfo{VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK};
+    surfaceCreateInfo.pView = _windowHandle;
+    VK_CHECK(vkCreateMacOSSurfaceMVK(gpuContext->vkInstance, &surfaceCreateInfo, nullptr, &_gpuSwapchain->vkSurface));
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
     VkWaylandSurfaceCreateInfoKHR surfaceCreateInfo{VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR};
     surfaceCreateInfo.display = nullptr; // TODO

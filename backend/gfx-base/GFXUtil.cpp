@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2020-2023 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
@@ -22,38 +22,17 @@
  THE SOFTWARE.
 ****************************************************************************/
 
-#pragma once
+#include "GFXUtil.h"
+//#include "../../cocos/platform/CCFileUtils.h"
+static std::function<ccstd::string()> PipelineCacheFolderHandler;
 
-#include "base/Agent.h"
-#include "gfx-base/GFXDescriptorSet.h"
+namespace cc::gfx {
+ccstd::string getPipelineCacheFolder() {
+    //return FileUtils::getInstance()->getWritablePath();
+    return PipelineCacheFolderHandler ? PipelineCacheFolderHandler() : "./";
+}
 
-namespace cc {
-namespace gfx {
-
-class CC_DLL DescriptorSetValidator final : public Agent<DescriptorSet> {
-public:
-    explicit DescriptorSetValidator(DescriptorSet *actor);
-    ~DescriptorSetValidator() override;
-
-    void update() override;
-    void forceUpdate() override;
-
-    void bindBuffer(uint32_t binding, Buffer *buffer, uint32_t index, AccessFlags flags) override;
-    void bindTexture(uint32_t binding, Texture *texture, uint32_t index, AccessFlags flags) override;
-    void bindSampler(uint32_t binding, Sampler *sampler, uint32_t index) override;
-
-    void updateReferenceStamp();
-
-    inline bool isInited() const { return _inited; }
-
-protected:
-    void doInit(const DescriptorSetInfo &info) override;
-    void doDestroy() override;
-
-    uint64_t _referenceStamp{0U};
-
-    bool _inited{false};
-};
-
-} // namespace gfx
-} // namespace cc
+void setPipelineCacheFolderHandler(const std::function<ccstd::string()>& handler) {
+    PipelineCacheFolderHandler = handler;
+}
+} // namespace cc::gfx

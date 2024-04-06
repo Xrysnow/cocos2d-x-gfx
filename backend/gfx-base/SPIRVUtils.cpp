@@ -32,6 +32,11 @@
 #include "glslang/Include/Types.h"
 #include "spirv.h"
 
+#define CC_GLSLANG_VERSION_GREATOR_OR_EQUAL_TO(major, minor, patch) \
+    (((major) < GLSLANG_VERSION_MAJOR) || ((major) == GLSLANG_VERSION_MAJOR && \
+    (((minor) < GLSLANG_VERSION_MINOR) || ((minor) == GLSLANG_VERSION_MINOR && \
+     ((patch) <= GLSLANG_VERSION_PATCH)))))
+
 namespace cc {
 namespace gfx {
 
@@ -58,10 +63,7 @@ glslang::EShTargetClientVersion getClientVersion(int vulkanMinorVersion) {
         case 0: return glslang::EShTargetVulkan_1_0;
         case 1: return glslang::EShTargetVulkan_1_1;
         case 2: return glslang::EShTargetVulkan_1_2;
-#if GLSLANG_VERSION_LESS_OR_EQUAL_TO(11, 10, 0)
-            // This macro is defined in glslang/build_info.h. This expression means that the
-            // lib version is greater than or equal to 11.10.0 (not less than or equal to),
-            // which is very counterintuitive. But it's the only way to do it.
+#if CC_GLSLANG_VERSION_GREATOR_OR_EQUAL_TO(11, 10, 0)
         case 3: return glslang::EShTargetVulkan_1_3;
 #else
         case 3: return glslang::EShTargetVulkan_1_2;
@@ -78,10 +80,7 @@ glslang::EShTargetLanguageVersion getTargetVersion(int vulkanMinorVersion) {
         case 0: return glslang::EShTargetSpv_1_0;
         case 1: return glslang::EShTargetSpv_1_3;
         case 2: return glslang::EShTargetSpv_1_5;
-#if GLSLANG_VERSION_LESS_OR_EQUAL_TO(11, 10, 0)
-            // This macro is defined in glslang/build_info.h. This expression means that the
-            // lib version is greater than or equal to 11.10.0 (not less than or equal to),
-            // which is very counterintuitive. But it's the only way to do it.
+#if CC_GLSLANG_VERSION_GREATOR_OR_EQUAL_TO(11, 10, 0)
         case 3: return glslang::EShTargetSpv_1_6;
 #else
         case 3: return glslang::EShTargetSpv_1_5;
@@ -144,7 +143,8 @@ void SPIRVUtils::compileGLSL(ShaderStageFlagBit type, const ccstd::string &sourc
     _output.clear();
     spv::SpvBuildLogger logger;
     glslang::SpvOptions spvOptions;
-    spvOptions.disableOptimizer = false;
+
+    spvOptions.disableOptimizer = false; // Do not disable optimizer in debug mode. It will cause the shader to fail to compile.
     spvOptions.optimizeSize = true;
 #if CC_DEBUG > 0
     // spvOptions.validate = true;

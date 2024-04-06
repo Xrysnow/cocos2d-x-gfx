@@ -25,6 +25,7 @@
 ****************************************************************************/
 
 #include "base/RefCounted.h"
+#include "Log.h"
 
 #if CC_REF_LEAK_DETECTION
     #include <algorithm> // std::find
@@ -56,6 +57,11 @@ void RefCounted::addRef() {
 }
 
 void RefCounted::release() {
+    if (_referenceCount <= 0)
+    {
+        CC_LOG_ERROR("RefCounted::release: invalid reference count in %s, got %d", typeid(*this).name(), _referenceCount);
+        return;
+    }
     CC_ASSERT_GT(_referenceCount, 0);
     --_referenceCount;
 

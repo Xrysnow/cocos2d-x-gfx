@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2019-2023 Xiamen Yaji Software Co., Ltd.
+ Copyright (c) 2023 Xiamen Yaji Software Co., Ltd.
 
  http://www.cocos.com
 
@@ -22,4 +22,34 @@
  THE SOFTWARE.
 ****************************************************************************/
 
-#include "GLES2Std.h"
+#pragma once
+
+#include "VKGPUObjects.h"
+#include "base/Ptr.h"
+#include "base/RefCounted.h"
+#include "base/std/container/string.h"
+#include "base/std/container/unordered_map.h"
+#include "base/std/container/vector.h"
+
+namespace cc::gfx {
+
+class CCVKPipelineCache : public RefCounted {
+public:
+    CCVKPipelineCache();
+    ~CCVKPipelineCache() override;
+
+    void init(VkDevice dev);
+    void loadCache();
+    void saveCache();
+
+    void setDirty();
+    VkPipelineCache getHandle() const;
+
+private:
+    VkDevice _device = VK_NULL_HANDLE;
+    VkPipelineCache _pipelineCache = VK_NULL_HANDLE;
+    ccstd::string _savePath;
+    bool _dirty = false;
+};
+
+} // namespace cc::gfx

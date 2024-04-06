@@ -37,6 +37,8 @@ set(src_dir ${CMAKE_CURRENT_SOURCE_DIR})
 set(gfx_src
   base/Agent.h
   base/Assertf.h
+  base/BinaryArchive.cpp
+  base/BinaryArchive.h
   base/CachedArray.h
   base/CoreStd.h
   base/IndexHandle.h
@@ -215,4 +217,13 @@ use_cocos2dx_compile_options(${target_name})
 
 if(XCODE OR VS)
     cocos_mark_code_files(${target_name})
+endif()
+
+if(ANDROID AND CC_USE_VULKAN)
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/backend/gfx-vulkan/VKDevice.cpp
+        PROPERTIES
+            # supress warning on Android
+            COMPILE_FLAGS -Wno-nullability-completeness
+    )
 endif()
