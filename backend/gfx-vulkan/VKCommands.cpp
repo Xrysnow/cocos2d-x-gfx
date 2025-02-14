@@ -1287,7 +1287,7 @@ void cmdFuncCCVKUpdateBuffer(CCVKDevice *device, CCVKGPUBuffer *gpuBuffer, const
 
         VkBufferCopy region{
             stagingBuffer->offset,
-            gpuBuffer->getStartOffset(backBufferIndex) + chunkOffset,
+            gpuBuffer->getStartOffset(backBufferIndex) + chunkOffset + offset,
             chunkSizeToUpload,
         };
 
