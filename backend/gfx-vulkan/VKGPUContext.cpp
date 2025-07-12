@@ -289,12 +289,13 @@ bool CCVKGPUContext::initialize() {
     for (deviceIndex = 0U; deviceIndex < physicalDeviceCount; ++deviceIndex) {
         VkPhysicalDeviceProperties &properties = physicalDevicePropertiesList[deviceIndex];
         vkGetPhysicalDeviceProperties(physicalDeviceHandles[deviceIndex], &properties);
+        CC_LOG_INFO("Physical Device %d: %s (Type %d)", deviceIndex, properties.deviceName, properties.deviceType);
     }
 
     for (deviceIndex = 0U; deviceIndex < physicalDeviceCount; ++deviceIndex) {
         VkPhysicalDeviceProperties &properties = physicalDevicePropertiesList[deviceIndex];
         if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-            break;
+            //break;
         }
     }
 
