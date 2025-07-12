@@ -2739,7 +2739,8 @@ static void uploadBufferData(GLenum target, GLintptr offset, GLsizeiptr length, 
     GL_CHECK(glBufferSubData(target, offset, length, buffer));
 #else
     void *dst{nullptr};
-    GL_CHECK(dst = glMapBufferRange(target, offset, length, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT));
+    //NOTE: do not use GL_MAP_INVALIDATE_BUFFER_BIT here since it can be partially updated
+    GL_CHECK(dst = glMapBufferRange(target, offset, length, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT));
     if (!dst) {
         GL_CHECK(glBufferSubData(target, offset, length, buffer));
         return;
