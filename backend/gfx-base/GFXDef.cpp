@@ -30,6 +30,8 @@
 #include "GFXRenderPass.h"
 #include "GFXTexture.h"
 
+#include <cstring>
+
 namespace cc {
 namespace gfx {
 

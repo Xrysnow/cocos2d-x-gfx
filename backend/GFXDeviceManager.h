@@ -24,16 +24,8 @@
 
 #pragma once
 
-//#include "engine/EngineEvents.h"
-
 #include "gfx-agent/DeviceAgent.h"
 #include "gfx-validator/DeviceValidator.h"
-
-//#undef CC_USE_NVN
-//#undef CC_USE_VULKAN
-//#undef CC_USE_METAL
-//#undef CC_USE_GLES3
-//#undef CC_USE_GLES2
 
 #ifdef CC_USE_VULKAN
     #include "gfx-vulkan/VKDevice.h"

@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <memory>
 #include "../VKStd.h"
 #include "gfx-base/states/GFXBufferBarrier.h"
 

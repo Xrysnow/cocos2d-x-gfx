@@ -30,10 +30,12 @@
 #include "base/std/container/unordered_set.h"
 #include "base/CachedArray.h"
 #include "gfx-base/GFXDeviceObject.h"
-#if USE_JOB_SYSTEM_TBB
+#if defined(USE_JOB_SYSTEM_TBB) && (USE_JOB_SYSTEM_TBB > 0)
 #define TBB_USE_EXCEPTIONS 0 // no-rtti for now
 #include "tbb/concurrent_unordered_map.h"
 #endif
+#include <cstring>
+#include <memory>
 #include <mutex>
 
 namespace cc {

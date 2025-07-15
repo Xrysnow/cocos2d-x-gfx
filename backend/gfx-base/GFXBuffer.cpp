@@ -22,6 +22,7 @@
  THE SOFTWARE.
 ****************************************************************************/
 
+#include <cstring>
 #include "GFXBuffer.h"
 #include "GFXDevice.h"
 

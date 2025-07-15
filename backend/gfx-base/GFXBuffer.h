@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <memory>
 #include "GFXObject.h"
 #include "base/RefCounted.h"
 

@@ -26,6 +26,7 @@
 
 #include <cstdarg>
 #include <cstddef>
+#include <cstdint>
 #include "Macros.h"
 #include "base/std/container/string.h"
 #include "base/std/container/vector.h"
