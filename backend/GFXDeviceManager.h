@@ -57,26 +57,35 @@ public:
         Device* device = nullptr;
         switch (preferredAPI)
         {
-#ifdef CC_USE_GLES2
         case API::GLES2:
+#ifdef CC_USE_GLES2
             if (tryCreate<GLES2Device>(info, &device))
                 return device;
 #endif
-#ifdef CC_USE_GLES3
+            break;
         case API::GLES3:
+#ifdef CC_USE_GLES3
             if (tryCreate<GLES3Device>(info, &device))
                 return device;
 #endif
-#ifdef CC_USE_METAL
+            break;
         case API::METAL:
+#ifdef CC_USE_METAL
             if (tryCreate<CCMTLDevice>(info, &device))
                 return device;
 #endif
-#ifdef CC_USE_VULKAN
+            break;
         case API::VULKAN:
+#ifdef CC_USE_VULKAN
             if (tryCreate<CCVKDevice>(info, &device))
                 return device;
 #endif
+            break;
+        case API::UNKNOWN:
+        case API::NVN:
+        case API::WEBGL:
+        case API::WEBGL2:
+        case API::WEBGPU:
         default:
             break;
     }
@@ -121,7 +130,7 @@ private:
         }
 
 #if !defined(CC_SERVER_MODE)
-        if (CC_DEBUG > 0 && !FORCE_DISABLE_VALIDATION || FORCE_ENABLE_VALIDATION) {
+        if ((CC_DEBUG > 0 && !FORCE_DISABLE_VALIDATION) || FORCE_ENABLE_VALIDATION) {
             device = ccnew gfx::DeviceValidator(device);
         }
 #endif
