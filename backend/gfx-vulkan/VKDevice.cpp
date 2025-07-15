@@ -60,7 +60,7 @@ CC_DISABLE_WARNINGS()
 #include "vk_mem_alloc.h"
 #define THSVS_ERROR_CHECK_MIXED_IMAGE_LAYOUT
 // remote potential hazard because of programmable blend
-//#define THSVS_ERROR_CHECK_POTENTIAL_HAZARD
+// #define THSVS_ERROR_CHECK_POTENTIAL_HAZARD
 #define THSVS_SIMPLER_VULKAN_SYNCHRONIZATION_IMPLEMENTATION
 #include "thsvs_simpler_vulkan_synchronization.h"
 CC_ENABLE_WARNINGS()
@@ -705,6 +705,7 @@ void CCVKDevice::present() {
     gpuFencePool()->reset();
     gpuRecycleBin()->clear();
     gpuStagingBufferPool()->reset();
+    gpuStagingBufferPool()->shrinkSize();
 }
 
 void CCVKDevice::frameSync() {
@@ -755,12 +756,14 @@ void CCVKDevice::initDeviceFeature() {
     _features[toNumber(Feature::RASTERIZATION_ORDER_NOCOHERENT)] = true;
     _features[toNumber(Feature::MULTI_SAMPLE_RESOLVE_DEPTH_STENCIL)] = checkExtension("VK_KHR_depth_stencil_resolve");
 
-    _gpuContext->debugReport = _gpuContext->checkExtension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME) &&
+    _gpuContext->debugReport =
+        _gpuContext->checkExtension(VK_EXT_DEBUG_REPORT_EXTENSION_NAME) &&
         checkExtension(VK_EXT_DEBUG_MARKER_EXTENSION_NAME) &&
         (vkCmdDebugMarkerBeginEXT != nullptr) &&
         (vkCmdDebugMarkerInsertEXT != nullptr) &&
         (vkCmdDebugMarkerEndEXT != nullptr);
-    _gpuContext->debugUtils = _gpuContext->checkExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) &&
+    _gpuContext->debugUtils =
+        _gpuContext->checkExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) &&
         (vkCmdBeginDebugUtilsLabelEXT != nullptr) &&
         (vkCmdInsertDebugUtilsLabelEXT != nullptr) &&
         (vkCmdEndDebugUtilsLabelEXT != nullptr);
