@@ -1184,6 +1184,8 @@ void cmdFuncGLES3CreateShader(GLES3Device *device, GLES3GPUShader *gpuShader, GL
     if (device->constantRegistry()->glMinorVersion > 0 && glGetProgramInterfaceiv) {
         GL_CHECK(glGetProgramInterfaceiv(gpuShader->glProgram, GL_SHADER_STORAGE_BLOCK, GL_ACTIVE_RESOURCES, &bufferCount));
     }
+
+#if CC_DEBUG
     GLint glActiveUniforms;
     GL_CHECK(glGetProgramiv(gpuShader->glProgram, GL_ACTIVE_UNIFORMS, &glActiveUniforms));
     //std::vector<bool> usedBlocks(gpuShader->blocks.size(), false);
@@ -1201,6 +1203,7 @@ void cmdFuncGLES3CreateShader(GLES3Device *device, GLES3GPUShader *gpuShader, GL
         uNames += name + " | ";
     }
     CC_LOG_DEBUG("GLES3CreateShader - uniforms: %s", uNames.c_str());
+#endif
 
     gpuShader->glBuffers.resize(blockCount + bufferCount);
 
@@ -2126,7 +2129,6 @@ void cmdFuncGLES3BindState(GLES3Device *device, GLES3GPUPipelineState *gpuPipeli
                 GL_CHECK(glUseProgram(gpuPipelineState->gpuShader->glProgram));
                 cache->glProgram = gpuPipelineState->gpuShader->glProgram;
                 isShaderChanged = true;
-                CC_LOG_DEBUG("GLES3BindState - shader changed");
             }
         }
 
@@ -2265,7 +2267,6 @@ void cmdFuncGLES3BindState(GLES3Device *device, GLES3GPUPipelineState *gpuPipeli
                 GL_CHECK(glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE));
             }
             cache->bs.isA2C = gpuPipelineState->bs.isA2C;
-            CC_LOG_DEBUG("GLES3BindState - isA2C = %s", cache->bs.isA2C ? "true" : "false");
         }
         if (cache->bs.blendColor.x != gpuPipelineState->bs.blendColor.x ||
             cache->bs.blendColor.y != gpuPipelineState->bs.blendColor.y ||
@@ -2288,7 +2289,6 @@ void cmdFuncGLES3BindState(GLES3Device *device, GLES3GPUPipelineState *gpuPipeli
                     GL_CHECK(glDisable(GL_BLEND));
                 }
                 cacheTarget.blend = target.blend;
-            	CC_LOG_DEBUG("GLES3BindState - blend = %s", cacheTarget.blend ? "true" : "false");
             }
             if (cacheTarget.blendEq != target.blendEq ||
                 cacheTarget.blendAlphaEq != target.blendAlphaEq) {
