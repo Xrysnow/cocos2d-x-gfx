@@ -302,6 +302,7 @@ bool CCVKGPUContext::initialize() {
     if (deviceIndex == physicalDeviceCount) {
         deviceIndex = 0;
     }
+    CC_LOG_INFO("Physical Device Choosed: %d", deviceIndex);
 
     physicalDevice = physicalDeviceHandles[deviceIndex];
     physicalDeviceProperties = physicalDevicePropertiesList[deviceIndex];
