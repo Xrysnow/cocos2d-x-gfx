@@ -41,6 +41,7 @@
 #endif
 
 #if CC_DEBUG > 0
+#if !defined(GL_CHECK)
     #define GL_CHECK(x)                                              \
         do {                                                         \
             x;                                                       \
@@ -50,6 +51,8 @@
                 /*CC_ABORT();*/                                          \
             }                                                        \
         } while (0)
+#endif
+#if !defined(EGL_CHECK)
     #define EGL_CHECK(x)                                              \
         do {                                                          \
             x;                                                        \
@@ -59,6 +62,7 @@
                 /*CC_ABORT();*/                                           \
             }                                                         \
         } while (0)
+#endif
 #else
     #define GL_CHECK(x)  x
     #define EGL_CHECK(x) x

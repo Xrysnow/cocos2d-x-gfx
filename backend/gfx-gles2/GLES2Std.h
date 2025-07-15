@@ -41,24 +41,28 @@
 #endif
 
 #if CC_DEBUG > 0
+#if !defined(GL_CHECK)
     #define GL_CHECK(x)                                              \
         do {                                                         \
             x;                                                       \
             GLenum err = glGetError();                               \
             if (err != GL_NO_ERROR) {                                \
                 CC_LOG_ERROR("%s returned GL error: 0x%x", #x, err); \
-                CC_ABORT();                                          \
+                /*CC_ABORT();*/                                          \
             }                                                        \
         } while (0)
+#endif
+#if !defined(EGL_CHECK)
     #define EGL_CHECK(x)                                              \
         do {                                                          \
             x;                                                        \
             EGLint err = eglGetError();                               \
             if (err != EGL_SUCCESS) {                                 \
                 CC_LOG_ERROR("%s returned EGL error: 0x%x", #x, err); \
-                CC_ABORT();                                           \
+                /*CC_ABORT();*/                                           \
             }                                                         \
         } while (0)
+#endif
 #else
     #define GL_CHECK(x)  x
     #define EGL_CHECK(x) x
