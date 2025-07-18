@@ -362,10 +362,13 @@ It should work same as apples CFSwapInt32LittleToHost(..)
     #error "Unknown compiler. Abort!"
 #endif
 
-#if INTPTR_MAX == INT32_MAX
-    #define CC_CPU_ARCH CC_CPU_ARCH_32
-#else
+#if defined(__x86_64__) || defined(_M_X64) || \
+    defined(__aarch64__) || defined(_M_ARM64) || \
+    defined(__powerpc64__) || defined(__mips64) || \
+    defined(__LP64__) || defined(_LP64)
     #define CC_CPU_ARCH CC_CPU_ARCH_64
+#else
+    #define CC_CPU_ARCH CC_CPU_ARCH_32
 #endif
 
 #if defined(__arm64__) || defined(__aarch64__)
