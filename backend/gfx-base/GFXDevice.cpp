@@ -24,10 +24,15 @@
 
 #include "GFXDevice.h"
 #include "GFXObject.h"
+#include "GFXDeviceManager.h"
 #include "base/memory/Memory.h"
 
 namespace cc {
 namespace gfx {
+
+bool DeviceManager::DETACH_DEVICE_THREAD = true;
+bool DeviceManager::FORCE_DISABLE_VALIDATION = false;
+bool DeviceManager::FORCE_ENABLE_VALIDATION = false;
 
 Device *Device::instance = nullptr;
 bool Device::isSupportDetachDeviceThread = true;

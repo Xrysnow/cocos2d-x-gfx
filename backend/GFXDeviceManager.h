@@ -48,11 +48,11 @@
 namespace cc {
 namespace gfx {
 class CC_DLL DeviceManager final {
-    static constexpr bool DETACH_DEVICE_THREAD{true};
-    static constexpr bool FORCE_DISABLE_VALIDATION{false};
-    static constexpr bool FORCE_ENABLE_VALIDATION{false};
-
 public:
+    static bool DETACH_DEVICE_THREAD;
+    static bool FORCE_DISABLE_VALIDATION;
+    static bool FORCE_ENABLE_VALIDATION;
+
     static Device* create(const DeviceInfo& info, API preferredAPI = API::UNKNOWN) {
         Device* device = nullptr;
         switch (preferredAPI)
@@ -82,13 +82,16 @@ public:
 #endif
             break;
         case API::UNKNOWN:
+            if (tryCreate<EmptyDevice>(info, &device))
+                return device;
+            break;
         case API::NVN:
         case API::WEBGL:
         case API::WEBGL2:
         case API::WEBGPU:
         default:
             break;
-    }
+        }
 
 #ifdef CC_USE_VULKAN
         if (preferredAPI != API::VULKAN && tryCreate<CCVKDevice>(info, &device))
