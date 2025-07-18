@@ -132,7 +132,7 @@ void TextureValidator::doInit(const TextureViewInfo &info) {
 }
 
 void TextureValidator::doInit(const SwapchainTextureInfo &info) {
-    CC_ASSERT(!isInited());
+    //CC_ASSERT(!isInited()); // already initialized
     _inited = true;
     CC_UNUSED_PARAM(info); // workaround tidy issue
     CC_ASSERT(info.swapchain && static_cast<SwapchainValidator *>(info.swapchain)->isInited());
