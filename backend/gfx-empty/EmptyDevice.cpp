@@ -58,6 +58,20 @@ EmptyDevice::~EmptyDevice() {
 }
 
 bool EmptyDevice::doInit(const DeviceInfo & /*info*/) {
+    _caps.maxVertexAttributes = 16;
+    _caps.maxVertexUniformVectors = 256;
+    _caps.maxFragmentUniformVectors = 256;
+    _caps.maxUniformBufferBindings = 36;
+    _caps.maxUniformBlockSize = 16384;
+    _caps.maxColorRenderTargets = 8;
+    _caps.maxTextureUnits = 16;
+    _caps.maxVertexTextureUnits = 16;
+    _caps.maxTextureSize = 16384;
+    _caps.maxCubeMapTextureSize = 16384;
+    _caps.uboOffsetAlignment = 1;
+    _caps.maxArrayTextureLayers = 256;
+    _caps.max3DTextureSize = 8192;
+
     QueueInfo queueInfo;
     queueInfo.type = QueueType::GRAPHICS;
     _queue = createQueue(queueInfo);
