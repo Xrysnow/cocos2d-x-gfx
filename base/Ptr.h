@@ -76,6 +76,7 @@
 
 #pragma once
 
+#include <functional>
 #include <utility>
 
 namespace cc {
