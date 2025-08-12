@@ -32,7 +32,7 @@ namespace {
 constexpr uint32_t FORCE_MINOR_VERSION = 0; // 0 for default version, otherwise minorVersion = (FORCE_MINOR_VERSION - 1)
 
 #define FORCE_ENABLE_VALIDATION  0
-#define FORCE_DISABLE_VALIDATION 1
+#define FORCE_DISABLE_VALIDATION 0
 
 using ccstd::vector;
 
@@ -98,6 +98,9 @@ bool CCVKGPUContext::initialize() {
     // only enable the absolute essentials
     ccstd::vector<const char *> requestedLayers{
         //"VK_LAYER_KHRONOS_synchronization2",
+#if CC_DEBUG > 0 && !FORCE_DISABLE_VALIDATION || FORCE_ENABLE_VALIDATION
+        "VK_LAYER_LUNARG_crash_diagnostic",
+#endif
     };
     ccstd::vector<const char *> requestedExtensions{
         VK_KHR_SURFACE_EXTENSION_NAME,
@@ -188,7 +191,7 @@ bool CCVKGPUContext::initialize() {
     }
 #endif
 
-#if CC_DEBUG
+#if CC_DEBUG > 0 && !FORCE_DISABLE_VALIDATION || FORCE_ENABLE_VALIDATION
     // Check if VK_EXT_debug_utils is supported, which supersedes VK_EXT_Debug_Report
     bool debugUtils = false;
     if (isExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, supportedExtensions)) {

@@ -316,10 +316,10 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
     _gpuSwapchain->createInfo.surface = _gpuSwapchain->vkSurface;
     _gpuSwapchain->createInfo.oldSwapchain = _gpuSwapchain->vkSwapchain;
 
-    CC_LOG_DEBUG("Resizing surface: %dx%d, surface rotation: %d degrees", newWidth, newHeight, (uint32_t)_transform * 90);
-    //vkDeviceWaitIdle(gpuDevice->vkDevice);
+    CC_LOG_DEBUG("Resizing surface: %dx%d, rotation: %d", newWidth, newHeight, (uint32_t)_transform * 90);
 
     CCVKDevice::getInstance()->waitAllFences();
+    vkDeviceWaitIdle(gpuDevice->vkDevice);
 
     VkSwapchainKHR vkSwapchain = VK_NULL_HANDLE;
     VK_CHECK(vkCreateSwapchainKHR(gpuDevice->vkDevice, &_gpuSwapchain->createInfo, nullptr, &vkSwapchain));

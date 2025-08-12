@@ -611,17 +611,14 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
     vkPresentBarriers.resize(count, presentBarrier);
     for (uint32_t i = 0U; i < count; ++i) {
         auto *swapchain = static_cast<CCVKSwapchain *>(swapchains[i]);
-        if (swapchain->gpuSwapchain()->lastPresentResult == VK_NOT_READY) {
+        if (swapchain->gpuSwapchain()->lastPresentResult == VK_NOT_READY
+            || swapchain->gpuSwapchain()->lastPresentResult == VK_ERROR_OUT_OF_DATE_KHR) {
             if (!swapchain->checkSwapchainStatus()) {
                 continue;
             }
         }
-        if (swapchain->gpuSwapchain()->vkSwapchain) {
-            vkSwapchains.push_back(swapchain->gpuSwapchain()->vkSwapchain);
-        }
-        if (swapchain->gpuSwapchain()) {
-            gpuSwapchains.push_back(swapchain->gpuSwapchain());
-        }
+        vkSwapchains.push_back(swapchain->gpuSwapchain()->vkSwapchain);
+        gpuSwapchains.push_back(swapchain->gpuSwapchain());
         vkSwapchainIndices.push_back(swapchain->gpuSwapchain()->curImageIndex);
     }
 
@@ -629,10 +626,24 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
     _gpuSemaphorePool->reset();
 
     for (uint32_t i = 0; i < vkSwapchains.size(); ++i) {
+        if (!vkSwapchains[i]) {
+            continue;
+        }
         VkSemaphore acquireSemaphore = _gpuSemaphorePool->alloc();
         VkResult res = vkAcquireNextImageKHR(_gpuDevice->vkDevice, vkSwapchains[i], ~0ULL,
                                              acquireSemaphore, VK_NULL_HANDLE, &vkSwapchainIndices[i]);
-        CC_ASSERT(res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR);
+        //CC_ASSERT(res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR);
+        if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+            auto* swapchain = static_cast<CCVKSwapchain*>(swapchains[i]);
+            if (!swapchain->checkSwapchainStatus()) {
+                continue;
+            }
+            gpuSwapchains[i] = swapchain->gpuSwapchain();
+            acquireSemaphore = _gpuSemaphorePool->alloc();
+            vkAcquireNextImageKHR(_gpuDevice->vkDevice, vkSwapchains[i], ~0ULL,
+                acquireSemaphore, VK_NULL_HANDLE, &vkSwapchainIndices[i]);
+        }
+
         gpuSwapchains[i]->curImageIndex = vkSwapchainIndices[i];
         queue->gpuQueue()->lastSignaledSemaphores.push_back(acquireSemaphore);
 
