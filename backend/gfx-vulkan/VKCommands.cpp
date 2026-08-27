@@ -421,7 +421,9 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
         attachmentDescriptions[i].storeOp = mapVkStoreOp(attachment.storeOp);
         attachmentDescriptions[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         attachmentDescriptions[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachmentDescriptions[i].initialLayout = attachment.loadOp == gfx::LoadOp::DISCARD ? VK_IMAGE_LAYOUT_UNDEFINED : initialLayout;
+        attachmentDescriptions[i].initialLayout = (attachment.loadOp == gfx::LoadOp::CLEAR || attachment.loadOp == gfx::LoadOp::DISCARD)
+                                                      ? VK_IMAGE_LAYOUT_UNDEFINED
+                                                      : initialLayout;
         attachmentDescriptions[i].finalLayout = finalLayout;
     }
     if (hasDepthStencil) {
@@ -435,7 +437,10 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
         attachmentDescriptions[depthIndex].storeOp = mapVkStoreOp(attachment.depthStoreOp);
         attachmentDescriptions[depthIndex].stencilLoadOp = hasStencil ? mapVkLoadOp(attachment.stencilLoadOp) : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         attachmentDescriptions[depthIndex].stencilStoreOp = hasStencil ? mapVkStoreOp(attachment.stencilStoreOp) : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachmentDescriptions[depthIndex].initialLayout = attachment.depthLoadOp == gfx::LoadOp::DISCARD ? VK_IMAGE_LAYOUT_UNDEFINED : initialLayout;
+        const bool depthContentsDiscarded =
+            (attachment.depthLoadOp == gfx::LoadOp::CLEAR || attachment.depthLoadOp == gfx::LoadOp::DISCARD) &&
+            (attachment.stencilLoadOp != gfx::LoadOp::LOAD);
+        attachmentDescriptions[depthIndex].initialLayout = depthContentsDiscarded ? VK_IMAGE_LAYOUT_UNDEFINED : initialLayout;
         attachmentDescriptions[depthIndex].finalLayout = finalLayout;
     }
     if (hasDepthResolve) {
@@ -450,7 +455,10 @@ void cmdFuncCCVKCreateRenderPass(CCVKDevice *device, CCVKGPURenderPass *gpuRende
         attachmentDescriptions[stencilIndex].storeOp = mapVkStoreOp(attachment.depthStoreOp);
         attachmentDescriptions[stencilIndex].stencilLoadOp = hasStencil ? mapVkLoadOp(attachment.stencilLoadOp) : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         attachmentDescriptions[stencilIndex].stencilStoreOp = hasStencil ? mapVkStoreOp(attachment.stencilStoreOp) : VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachmentDescriptions[stencilIndex].initialLayout = attachment.depthLoadOp == gfx::LoadOp::DISCARD ? VK_IMAGE_LAYOUT_UNDEFINED : initialLayout;
+        const bool depthResolveContentsDiscarded =
+            (attachment.depthLoadOp == gfx::LoadOp::CLEAR || attachment.depthLoadOp == gfx::LoadOp::DISCARD) &&
+            (attachment.stencilLoadOp != gfx::LoadOp::LOAD);
+        attachmentDescriptions[stencilIndex].initialLayout = depthResolveContentsDiscarded ? VK_IMAGE_LAYOUT_UNDEFINED : initialLayout;
         attachmentDescriptions[stencilIndex].finalLayout = finalLayout;
     }
 

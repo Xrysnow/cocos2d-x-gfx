@@ -180,12 +180,16 @@ void CCVKCommandBuffer::beginRenderPass(RenderPass *renderPass, Framebuffer *fbo
         clearValues[attachmentCount + 1].depthStencil = {depth, stencil};
     }
 
-    Rect safeArea{
-        std::min(renderArea.x, static_cast<int32_t>(_curGPUFBO->width)),
-        std::min(renderArea.y, static_cast<int32_t>(_curGPUFBO->height)),
-        std::min(renderArea.width, _curGPUFBO->width),
-        std::min(renderArea.height, _curGPUFBO->height),
-    };
+    // clamp the render area into the framebuffer: offset first, then the extent must be
+    // reduced by the offset (min'ing them independently keeps offset+extent > fbo, which
+    // triggers VUID-VkRenderPassBeginInfo-pNext-02852 and can cause device faults)
+    const int32_t fboWidth  = static_cast<int32_t>(_curGPUFBO->width);
+    const int32_t fboHeight = static_cast<int32_t>(_curGPUFBO->height);
+    const int32_t safeX     = std::clamp(renderArea.x, 0, fboWidth);
+    const int32_t safeY     = std::clamp(renderArea.y, 0, fboHeight);
+    const uint32_t safeW    = static_cast<uint32_t>(std::clamp(static_cast<int32_t>(renderArea.width), 0, fboWidth - safeX));
+    const uint32_t safeH    = static_cast<uint32_t>(std::clamp(static_cast<int32_t>(renderArea.height), 0, fboHeight - safeY));
+    Rect safeArea{safeX, safeY, safeW, safeH};
 
     VkRenderPassBeginInfo passBeginInfo{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     passBeginInfo.renderPass = _curGPURenderPass->vkRenderPass;
