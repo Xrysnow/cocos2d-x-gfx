@@ -214,6 +214,14 @@ void CCVKSwapchain::doInit(const SwapchainInfo &info) {
             imageUsage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         }
 
+        // The swapchain color texture is referenced by no-clear (LOAD) passes and post-effect
+        // paths with SHADER_READ_ONLY initial/final layouts (VUID-vkCmdBeginRenderPass-initialLayout-00897),
+        // so the image must carry SAMPLED usage; the GFX-side TextureInfo already declares
+        // SAMPLED for the swapchain texture, and the swapchain creation must honor it.
+        if (surfaceCapabilities.supportedUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) {
+            imageUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+        }
+
         _gpuSwapchain->createInfo.surface = _gpuSwapchain->vkSurface;
         _gpuSwapchain->createInfo.minImageCount = desiredNumberOfSwapchainImages;
         _gpuSwapchain->createInfo.imageFormat = colorFormat;
@@ -316,13 +324,17 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
     _gpuSwapchain->createInfo.surface = _gpuSwapchain->vkSurface;
     _gpuSwapchain->createInfo.oldSwapchain = _gpuSwapchain->vkSwapchain;
 
-    CC_LOG_DEBUG("Resizing surface: %dx%d, rotation: %d", newWidth, newHeight, (uint32_t)_transform * 90);
-
     CCVKDevice::getInstance()->waitAllFences();
     vkDeviceWaitIdle(gpuDevice->vkDevice);
 
     VkSwapchainKHR vkSwapchain = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateSwapchainKHR(gpuDevice->vkDevice, &_gpuSwapchain->createInfo, nullptr, &vkSwapchain));
+    VkResult createResult = vkCreateSwapchainKHR(gpuDevice->vkDevice, &_gpuSwapchain->createInfo, nullptr, &vkSwapchain);
+    if (createResult != VK_SUCCESS) {
+        // VK_CHECK is a no-op in release builds: never continue with a NULL swapchain
+        CC_LOG_ERROR("Failed to create swapchain: %d", createResult);
+        _gpuSwapchain->lastPresentResult = VK_NOT_READY;
+        return false;
+    }
 
     destroySwapchain(gpuDevice);
 

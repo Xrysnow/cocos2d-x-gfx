@@ -149,9 +149,12 @@ bool CCVKDevice::doInit(const DeviceInfo & /*info*/) {
 
     requestedVulkan12Features.pNext = &shadingRateRequest;
 
-    if (_gpuContext->validationEnabled) {
-        requestedLayers.push_back("VK_LAYER_KHRONOS_validation");
-    }
+    // NOTE: device layers never worked since Vulkan 1.0 and are ignored by the loader;
+    // passing them triggers VUID-VkDeviceCreateInfo-enabledLayerCount-12384 with modern
+    // validation layers. Validation is enabled at the instance level instead.
+    //if (_gpuContext->validationEnabled) {
+    //    requestedLayers.push_back("VK_LAYER_KHRONOS_validation");
+    //}
 
     // check extensions
     uint32_t availableLayerCount;
@@ -639,6 +642,7 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
                 continue;
             }
             gpuSwapchains[i] = swapchain->gpuSwapchain();
+            vkSwapchains[i] = swapchain->gpuSwapchain()->vkSwapchain;
             acquireSemaphore = _gpuSemaphorePool->alloc();
             vkAcquireNextImageKHR(_gpuDevice->vkDevice, vkSwapchains[i], ~0ULL,
                 acquireSemaphore, VK_NULL_HANDLE, &vkSwapchainIndices[i]);
