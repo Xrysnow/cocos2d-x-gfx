@@ -35,6 +35,9 @@ public:
     explicit SwapchainAgent(Swapchain *actor);
     ~SwapchainAgent() override;
 
+    void acquireFullScreenExclusiveMode() override;
+    void releaseFullScreenExclusiveMode() override;
+
 protected:
     void doInit(const SwapchainInfo &info) override;
     void doDestroy() override;

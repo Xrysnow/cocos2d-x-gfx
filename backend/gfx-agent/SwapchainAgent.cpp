@@ -108,6 +108,28 @@ void SwapchainAgent::doResize(uint32_t width, uint32_t height, SurfaceTransform 
     updateInfo();
 }
 
+void SwapchainAgent::acquireFullScreenExclusiveMode() {
+    auto *mq = DeviceAgent::getInstance()->getMessageQueue();
+    ENQUEUE_MESSAGE_1(
+        mq, SwapchainAcquireFullScreenExclusive,
+        actor, getActor(),
+        {
+            actor->acquireFullScreenExclusiveMode();
+        });
+    mq->kickAndWait();
+}
+
+void SwapchainAgent::releaseFullScreenExclusiveMode() {
+    auto *mq = DeviceAgent::getInstance()->getMessageQueue();
+    ENQUEUE_MESSAGE_1(
+        mq, SwapchainReleaseFullScreenExclusive,
+        actor, getActor(),
+        {
+            actor->releaseFullScreenExclusiveMode();
+        });
+    mq->kickAndWait();
+}
+
 void SwapchainAgent::updateInfo() {
     _generation = _actor->getGeneration();
     SwapchainTextureInfo textureInfo;

@@ -45,6 +45,17 @@ public:
 
     bool checkSwapchainStatus(uint32_t width = 0, uint32_t height = 0);
 
+    // VK_EXT_full_screen_exclusive: the swapchain is created with the surface-supported
+    // full screen exclusive mode (preferred: VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT,
+    // fallback: VK_FULL_SCREEN_EXCLUSIVE_ALLOWED_EXT, queried per-surface before creation with
+    // vkGetPhysicalDeviceSurfacePresentModes2EXT).
+    // acquire / release exclusive fullscreen mode of this swapchain.
+    // After a successful request the mode is re-acquired automatically
+    // whenever the swapchain is recreated (resize / full-screen mode loss).
+    // The feature is Win32 only: on other platforms these methods are no-ops.
+    void acquireFullScreenExclusiveMode() override;
+    void releaseFullScreenExclusiveMode() override;
+
 protected:
     void doInit(const SwapchainInfo &info) override;
     void doDestroy() override;
@@ -54,6 +65,13 @@ protected:
 
     void createVkSurface();
     void destroySwapchain(CCVKGPUDevice *gpuDevice);
+
+    bool canQuerySurfaceCapabilities2() const;
+    bool isFullScreenExclusiveSupported() const;
+    bool queryFullScreenExclusiveMode();
+    void setupFullScreenExclusiveInfo();
+    void attemptFullScreenExclusiveAcquire();
+    void releaseFullScreenExclusiveModeInternal();
 
     IntrusivePtr<CCVKGPUSwapchain> _gpuSwapchain;
 };

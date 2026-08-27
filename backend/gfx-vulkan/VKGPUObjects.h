@@ -64,10 +64,12 @@ public:
 
     uint32_t majorVersion = 0;
     uint32_t minorVersion = 0;
+    uint32_t instanceMinorVersion = 0;
 
     bool validationEnabled = false;
     bool debugUtils = false;
     bool debugReport = false;
+    bool supportFullScreenExclusive = false;
 
     ccstd::vector<const char *> layers;
     ccstd::vector<const char *> extensions;
@@ -286,6 +288,19 @@ struct CCVKGPUFramebuffer : public CCVKGPUDeviceObject {
 struct CCVKGPUSwapchain : public CCVKGPUDeviceObject {
     VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
     VkSwapchainCreateInfoKHR createInfo{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+
+    // VK_EXT_full_screen_exclusive (VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT /
+    // VK_FULL_SCREEN_EXCLUSIVE_ALLOWED_EXT); Win32-only feature: since SDK 1.4.3xx the
+    // types are declared in vulkan_win32.h only. Keep the pNext chain alive across
+    // vkCreateSwapchainKHR calls.
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+    VkSurfaceFullScreenExclusiveInfoEXT fullScreenExclusiveInfo{VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT};
+    VkFullScreenExclusiveEXT fullScreenExclusiveMode = VK_FULL_SCREEN_EXCLUSIVE_ALLOWED_EXT;
+    VkSurfaceFullScreenExclusiveWin32InfoEXT fullScreenExclusiveWin32Info{VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_WIN32_INFO_EXT};
+#endif
+    bool fullScreenExclusiveAllowed = false;
+    bool fullScreenExclusiveRequested = false;
+    bool fullScreenExclusiveAcquired = false;
 
     uint32_t curImageIndex = 0U;
     VkSwapchainKHR vkSwapchain = VK_NULL_HANDLE;

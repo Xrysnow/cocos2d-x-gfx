@@ -82,8 +82,32 @@ void CCVKSwapchain::doInit(const SwapchainInfo &info) {
     Format depthStencilFmt = Format::DEPTH_STENCIL;
 
     if (_gpuSwapchain->vkSurface != VK_NULL_HANDLE) {
+        _gpuSwapchain->fullScreenExclusiveAllowed = queryFullScreenExclusiveMode();
+
         VkSurfaceCapabilitiesKHR surfaceCapabilities{};
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpuContext->physicalDevice, _gpuSwapchain->vkSurface, &surfaceCapabilities);
+        if (canQuerySurfaceCapabilities2()) {
+            // query the capabilities a swapchain would get when created
+            // in the selected full-screen exclusive mode
+            VkPhysicalDeviceSurfaceInfo2KHR surfaceInfo{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR};
+            surfaceInfo.surface = _gpuSwapchain->vkSurface;
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+            if (_gpuSwapchain->fullScreenExclusiveAllowed) {
+                VkSurfaceFullScreenExclusiveInfoEXT fullScreenExclusiveInfo{VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT};
+                fullScreenExclusiveInfo.fullScreenExclusive = _gpuSwapchain->fullScreenExclusiveMode;
+                // VUID-VkPhysicalDeviceSurfaceInfo2KHR-pNext-02672: win32 monitor struct required
+                // for APPLICATION_CONTROLLED / ALLOWED on a Win32 surface
+                VkSurfaceFullScreenExclusiveWin32InfoEXT fullScreenExclusiveWin32Info{VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_WIN32_INFO_EXT};
+                fullScreenExclusiveWin32Info.hmonitor = _windowHandle ? MonitorFromWindow(static_cast<HWND>(_windowHandle), MONITOR_DEFAULTTONEAREST) : VK_NULL_HANDLE;
+                fullScreenExclusiveInfo.pNext = &fullScreenExclusiveWin32Info;
+                surfaceInfo.pNext = &fullScreenExclusiveInfo;
+            }
+#endif
+            VkSurfaceCapabilities2KHR surfaceCapabilities2{VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR};
+            VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilities2KHR(gpuContext->physicalDevice, &surfaceInfo, &surfaceCapabilities2));
+            surfaceCapabilities = surfaceCapabilities2.surfaceCapabilities;
+        } else {
+            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(gpuContext->physicalDevice, _gpuSwapchain->vkSurface, &surfaceCapabilities);
+        }
 
         uint32_t surfaceFormatCount = 0U;
         VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(gpuContext->physicalDevice, _gpuSwapchain->vkSurface, &surfaceFormatCount, nullptr));
@@ -308,6 +332,13 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
         return true;
     }
 
+    CC_LOG_DEBUG("Resize swapchain: %dx%d -> %dx%d, rotation: %d",
+        _gpuSwapchain->createInfo.imageExtent.width,
+        _gpuSwapchain->createInfo.imageExtent.height,
+        newWidth,
+        newHeight,
+        (uint32_t)_transform * 90);
+
     if (newWidth == static_cast<uint32_t>(-1)) {
         _gpuSwapchain->createInfo.imageExtent.width = _colorTexture->getWidth();
         _gpuSwapchain->createInfo.imageExtent.height = _colorTexture->getHeight();
@@ -326,6 +357,8 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
 
     CCVKDevice::getInstance()->waitAllFences();
     vkDeviceWaitIdle(gpuDevice->vkDevice);
+
+    setupFullScreenExclusiveInfo();
 
     VkSwapchainKHR vkSwapchain = VK_NULL_HANDLE;
     VkResult createResult = vkCreateSwapchainKHR(gpuDevice->vkDevice, &_gpuSwapchain->createInfo, nullptr, &vkSwapchain);
@@ -394,6 +427,14 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
     colorGPUTexture->currentAccessTypes.assign(1, THSVS_ACCESS_PRESENT);
     depthStencilGPUTexture->currentAccessTypes.assign(1, THSVS_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ);
 
+    // automatic recovery: whenever the swapchain is (re)created while exclusive full screen
+    // mode has been requested and not released (fullScreenExclusiveRequested), try to acquire
+    // it again for the new swapchain; on failure the request stays pending and the next
+    // swapchain recreation (resize / full-screen mode loss) retries automatically
+    if (_gpuSwapchain->fullScreenExclusiveRequested) {
+        attemptFullScreenExclusiveAcquire();
+    }
+
     _gpuSwapchain->lastPresentResult = VK_SUCCESS;
 
     // Android Game Frame Pacing:swappy
@@ -423,6 +464,9 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
 void CCVKSwapchain::destroySwapchain(CCVKGPUDevice *gpuDevice) {
     if (_gpuSwapchain->vkSwapchain != VK_NULL_HANDLE) {
         _gpuSwapchain->swapchainImages.clear();
+
+        // note: keep fullScreenExclusiveRequested, the new swapchain will re-acquire it
+        releaseFullScreenExclusiveModeInternal();
 
 #if CC_SWAPPY_ENABLED
         SwappyVk_destroySwapchain(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain);
@@ -495,6 +539,157 @@ void CCVKSwapchain::createVkSurface() {
     VK_CHECK(vkCreateXcbSurfaceKHR(gpuContext->vkInstance, &surfaceCreateInfo, nullptr, &_gpuSwapchain->vkSurface));
 #else
     #pragma error Platform not supported
+#endif
+}
+
+bool CCVKSwapchain::canQuerySurfaceCapabilities2() const {
+    // the KHR_get_surface_capabilities2 instance extension is requested unconditionally at
+    // instance creation; only query with caps-2 when it was actually enabled (calling the
+    // function without the extension is undefined / reported by validation layers)
+    const auto *gpuContext = CCVKDevice::getInstance()->gpuContext();
+    return gpuContext->checkExtension(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+}
+
+bool CCVKSwapchain::isFullScreenExclusiveSupported() const {
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    return CCVKDevice::getInstance()->checkExtension(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME);
+#else
+    return false;
+#endif
+}
+
+bool CCVKSwapchain::queryFullScreenExclusiveMode() {
+    _gpuSwapchain->fullScreenExclusiveAllowed = false;
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    if (!isFullScreenExclusiveSupported() || !vkGetPhysicalDeviceSurfacePresentModes2EXT) {
+        return false;
+    }
+
+    const auto *gpuContext = CCVKDevice::getInstance()->gpuContext();
+
+    // probe the surface for a supported full-screen-exclusive mode before the
+    // swapchain is created: the surface info carries the mode hint, the query
+    // only succeeds for modes this surface can actually present
+    const VkFullScreenExclusiveEXT preferredModes[]{
+        VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT,
+        VK_FULL_SCREEN_EXCLUSIVE_ALLOWED_EXT,
+    };
+    for (VkFullScreenExclusiveEXT mode : preferredModes) {
+        VkPhysicalDeviceSurfaceInfo2KHR surfaceInfo{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR};
+        surfaceInfo.surface = _gpuSwapchain->vkSurface;
+        VkSurfaceFullScreenExclusiveInfoEXT fullScreenExclusiveInfo{VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT};
+        fullScreenExclusiveInfo.fullScreenExclusive = mode;
+        // VUID-VkPhysicalDeviceSurfaceInfo2KHR-pNext-02672: for APPLICATION_CONTROLLED /
+        // ALLOWED on a Win32 surface, the win32 monitor struct must be chained as well
+        VkSurfaceFullScreenExclusiveWin32InfoEXT fullScreenExclusiveWin32Info{VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_WIN32_INFO_EXT};
+        fullScreenExclusiveWin32Info.hmonitor = _windowHandle ? MonitorFromWindow(static_cast<HWND>(_windowHandle), MONITOR_DEFAULTTONEAREST) : VK_NULL_HANDLE;
+        fullScreenExclusiveInfo.pNext = &fullScreenExclusiveWin32Info;
+        surfaceInfo.pNext = &fullScreenExclusiveInfo;
+
+        uint32_t presentModeCount = 0U;
+        if (vkGetPhysicalDeviceSurfacePresentModes2EXT(gpuContext->physicalDevice, &surfaceInfo, &presentModeCount, nullptr) != VK_SUCCESS) {
+            continue; // the surface does not support this full-screen-exclusive mode
+        }
+
+        _gpuSwapchain->fullScreenExclusiveMode = mode;
+        _gpuSwapchain->fullScreenExclusiveAllowed = true;
+        CC_LOG_INFO("Avalible full screen exclusive mode: %s",
+            mode == VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT ? "APPLICATION_CONTROLLED" : "ALLOWED");
+        return true;
+    }
+    return false;
+#else
+    return false;
+#endif
+}
+
+void CCVKSwapchain::setupFullScreenExclusiveInfo() {
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    // re-query the supported full-screen exclusive mode before each swapchain creation
+    // (the surface may have moved to another monitor / display config changed)
+    _gpuSwapchain->fullScreenExclusiveAllowed = queryFullScreenExclusiveMode();
+    if (!_gpuSwapchain->fullScreenExclusiveAllowed) {
+        _gpuSwapchain->createInfo.pNext = nullptr;
+        return;
+    }
+
+    auto &fullScreenExclusiveInfo = _gpuSwapchain->fullScreenExclusiveInfo;
+    fullScreenExclusiveInfo.sType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
+    fullScreenExclusiveInfo.pNext = nullptr;
+    fullScreenExclusiveInfo.fullScreenExclusive = _gpuSwapchain->fullScreenExclusiveMode;
+
+    // VUID-VkSwapchainCreateInfoKHR-pNext-02679: for APPLICATION_CONTROLLED / ALLOWED on a Win32
+    // surface the win32 monitor struct must be chained as well (the monitor is selected here;
+    // when omitted the system uses the monitor the surface's window is located on)
+    auto &fullScreenExclusiveWin32Info = _gpuSwapchain->fullScreenExclusiveWin32Info;
+    fullScreenExclusiveWin32Info.sType = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_WIN32_INFO_EXT;
+    fullScreenExclusiveWin32Info.pNext = nullptr;
+    fullScreenExclusiveWin32Info.hmonitor = _windowHandle ? MonitorFromWindow(static_cast<HWND>(_windowHandle), MONITOR_DEFAULTTONEAREST) : VK_NULL_HANDLE;
+    fullScreenExclusiveInfo.pNext = &fullScreenExclusiveWin32Info;
+
+    _gpuSwapchain->createInfo.pNext = &fullScreenExclusiveInfo;
+#else
+    _gpuSwapchain->createInfo.pNext = nullptr;
+#endif
+}
+
+void CCVKSwapchain::acquireFullScreenExclusiveMode() {
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    // fail early only when the device does not support the extension at all;
+    // a temporarily unavailable surface mode (fullScreenExclusiveAllowed == false)
+    // must not drop the request: the intent is kept and retried automatically on the
+    // next swapchain recreation
+    if (!isFullScreenExclusiveSupported()) {
+        return;
+    }
+    _gpuSwapchain->fullScreenExclusiveRequested = true;
+    attemptFullScreenExclusiveAcquire();
+#endif
+}
+
+void CCVKSwapchain::attemptFullScreenExclusiveAcquire() {
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    // fullScreenExclusiveAllowed == false means the current swapchain was NOT created
+    // with the exclusive mode chain; calling vkAcquireFullScreenExclusiveModeEXT on it
+    // would violate the spec, so the attempt is deferred to the next recreation
+    // (fullScreenExclusiveRequested is kept and retried automatically)
+    if (!_gpuSwapchain->fullScreenExclusiveAllowed || !_gpuSwapchain->fullScreenExclusiveRequested) return;
+    if (_gpuSwapchain->fullScreenExclusiveAcquired) return;
+
+    const auto *gpuDevice = CCVKDevice::getInstance()->gpuDevice();
+    VkResult res = vkAcquireFullScreenExclusiveModeEXT(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain);
+    if (res == VK_SUCCESS) {
+        _gpuSwapchain->fullScreenExclusiveAcquired = true;
+        CC_LOG_INFO("Full screen exclusive mode acquired");
+    } else if (res == VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT) {
+        // the mode was already lost (e.g. another application took exclusive mode):
+        // stay in windowed mode, the swapchain remains valid and the next swapchain
+        // recreation (resize / mode loss recovery) will retry the acquisition,
+        // fullScreenExclusiveRequested is intentionally kept
+        CC_LOG_WARNING("Failed to acquire full screen exclusive mode: mode lost");
+    } else {
+        CC_LOG_WARNING("Failed to acquire full screen exclusive mode: %d", res);
+    }
+#endif
+}
+
+void CCVKSwapchain::releaseFullScreenExclusiveMode() {
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    _gpuSwapchain->fullScreenExclusiveRequested = false;
+    releaseFullScreenExclusiveModeInternal();
+#endif
+}
+
+void CCVKSwapchain::releaseFullScreenExclusiveModeInternal() {
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+    if (!_gpuSwapchain->fullScreenExclusiveAcquired)
+        return;
+    const auto *gpuDevice = CCVKDevice::getInstance()->gpuDevice();
+    VkResult res = vkReleaseFullScreenExclusiveModeEXT(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain);
+    if (res != VK_SUCCESS) {
+        CC_LOG_WARNING("Failed to release full screen exclusive mode: %d", res);
+    }
+    _gpuSwapchain->fullScreenExclusiveAcquired = false;
 #endif
 }
 

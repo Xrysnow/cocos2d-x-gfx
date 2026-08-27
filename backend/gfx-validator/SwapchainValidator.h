@@ -36,6 +36,9 @@ public:
     explicit SwapchainValidator(Swapchain *actor);
     ~SwapchainValidator() override;
 
+    void acquireFullScreenExclusiveMode() override;
+    void releaseFullScreenExclusiveMode() override;
+
     inline bool isInited() const { return _inited; }
 
 protected:

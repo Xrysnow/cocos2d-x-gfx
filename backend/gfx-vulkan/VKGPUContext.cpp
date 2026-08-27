@@ -121,9 +121,14 @@ bool CCVKGPUContext::initialize() {
     }
 
     minorVersion = VK_VERSION_MINOR(apiVersion);
+    instanceMinorVersion = minorVersion;
     if (minorVersion < 1) {
         requestedExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
     }
+    // always request: VK_EXT_full_screen_exclusive explicitly depends on this instance extension
+    // (VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-01387 requires it to be enabled when the
+    // device extension is enabled), and it is required for the surface capabilities-2 query
+    requestedExtensions.push_back(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
 
     uint32_t availableLayerCount;
     VK_CHECK(vkEnumerateInstanceLayerProperties(&availableLayerCount, nullptr));
@@ -313,6 +318,17 @@ bool CCVKGPUContext::initialize() {
 
     majorVersion = VK_VERSION_MAJOR(physicalDeviceProperties.apiVersion);
     minorVersion = VK_VERSION_MINOR(physicalDeviceProperties.apiVersion);
+
+    // probe whether the driven device supports VK_EXT_full_screen_exclusive
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+    {
+        uint32_t deviceExtensionCount = 0;
+        VK_CHECK(vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &deviceExtensionCount, nullptr));
+        ccstd::vector<VkExtensionProperties> deviceExtensions(deviceExtensionCount);
+        VK_CHECK(vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &deviceExtensionCount, deviceExtensions.data()));
+        supportFullScreenExclusive = isExtensionSupported(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME, deviceExtensions);
+    }
+#endif
 
     if (minorVersion >= 1 || checkExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)) {
         physicalDeviceFeatures2.pNext = &physicalDeviceVulkan11Features;

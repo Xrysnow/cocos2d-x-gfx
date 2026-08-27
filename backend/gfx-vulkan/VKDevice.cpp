@@ -120,6 +120,11 @@ bool CCVKDevice::doInit(const DeviceInfo & /*info*/) {
 #if CC_DEBUG
     requestedExtensions.push_back(VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
 #endif
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+    if (_gpuContext->supportFullScreenExclusive) {
+        requestedExtensions.push_back(VK_EXT_FULL_SCREEN_EXCLUSIVE_EXTENSION_NAME);
+    }
+#endif
     if (_gpuDevice->minorVersion < 2) {
         requestedExtensions.push_back(VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME);
     }
@@ -615,7 +620,8 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
     for (uint32_t i = 0U; i < count; ++i) {
         auto *swapchain = static_cast<CCVKSwapchain *>(swapchains[i]);
         if (swapchain->gpuSwapchain()->lastPresentResult == VK_NOT_READY
-            || swapchain->gpuSwapchain()->lastPresentResult == VK_ERROR_OUT_OF_DATE_KHR) {
+            || swapchain->gpuSwapchain()->lastPresentResult == VK_ERROR_OUT_OF_DATE_KHR
+            || swapchain->gpuSwapchain()->lastPresentResult == VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT) {
             if (!swapchain->checkSwapchainStatus()) {
                 continue;
             }
@@ -636,7 +642,7 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
         VkResult res = vkAcquireNextImageKHR(_gpuDevice->vkDevice, vkSwapchains[i], ~0ULL,
                                              acquireSemaphore, VK_NULL_HANDLE, &vkSwapchainIndices[i]);
         //CC_ASSERT(res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR);
-        if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+        if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT) {
             auto* swapchain = static_cast<CCVKSwapchain*>(swapchains[i]);
             if (!swapchain->checkSwapchainStatus()) {
                 continue;

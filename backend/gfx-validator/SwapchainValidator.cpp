@@ -121,5 +121,17 @@ void SwapchainValidator::doCreateSurface(void *windowHandle) {
     updateInfo();
 }
 
+void SwapchainValidator::acquireFullScreenExclusiveMode() {
+    CC_ASSERT(isInited());
+
+    _actor->acquireFullScreenExclusiveMode();
+}
+
+void SwapchainValidator::releaseFullScreenExclusiveMode() {
+    CC_ASSERT(isInited());
+
+    _actor->releaseFullScreenExclusiveMode();
+}
+
 } // namespace gfx
 } // namespace cc

@@ -51,6 +51,9 @@ public:
      */
     void resize(uint32_t width, uint32_t height, SurfaceTransform transform);
 
+    virtual void acquireFullScreenExclusiveMode() {}
+    virtual void releaseFullScreenExclusiveMode() {}
+
     inline void destroySurface();
     inline void createSurface(void *windowHandle);
 
