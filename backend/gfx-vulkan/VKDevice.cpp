@@ -562,6 +562,10 @@ void CCVKDevice::doDestroy() {
         CC_LOG_DEBUG("Destroy descriptor sets: %d", _gpuDevice->_descriptorSetPools.size());
         _gpuDevice->_descriptorSetPools.clear();
 
+        // flush retirees never destroyed by a present; must precede vkDestroyDevice,
+        // since their release runs the Vulkan destroys on a still-live VkDevice
+        _gpuDevice->retiredSwapchains.clear();
+
         if (_gpuDevice->vkDevice != VK_NULL_HANDLE) {
             CC_LOG_DEBUG("Destroy device");
             vkDestroyDevice(_gpuDevice->vkDevice, nullptr);
@@ -680,6 +684,7 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
 
 void CCVKDevice::present() {
     CC_PROFILE(CCVKDevicePresent);
+    ++_gpuDevice->frameIndex;
     auto *queue = static_cast<CCVKQueue *>(_queue);
     _numDrawCalls = queue->_numDrawCalls;
     _numInstances = queue->_numInstances;
@@ -727,6 +732,19 @@ void CCVKDevice::present() {
     gpuRecycleBin()->clear();
     gpuStagingBufferPool()->reset();
     gpuStagingBufferPool()->shrinkSize();
+
+    // destroy swapchains retired by recreation: the fence wait above only guarantees the
+    // frame backBufferCount-1 presents ago, so an entry is due once its retirement is
+    // backBufferCount presents away (recreation frame's fence waited). Erasing an entry
+    // destroys its old textures/views first, then the swapchain.
+    if (!_gpuDevice->retiredSwapchains.empty()) {
+        _gpuDevice->retiredSwapchains.erase(
+            std::remove_if(_gpuDevice->retiredSwapchains.begin(), _gpuDevice->retiredSwapchains.end(),
+                           [this](const CCVKGPUDevice::RetiredSwapchain &r) {
+                               return r.retireFrame + _gpuDevice->backBufferCount <= _gpuDevice->frameIndex;
+                           }),
+            _gpuDevice->retiredSwapchains.end());
+    }
 }
 
 void CCVKDevice::frameSync() {

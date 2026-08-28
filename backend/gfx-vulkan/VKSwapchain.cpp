@@ -369,7 +369,7 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
         return false;
     }
 
-    destroySwapchain(gpuDevice);
+    destroySwapchain(gpuDevice, true); // deferred: old chain retired until its fence is waited
 
     _gpuSwapchain->vkSwapchain = vkSwapchain;
 
@@ -461,18 +461,32 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
     return true;
 }
 
-void CCVKSwapchain::destroySwapchain(CCVKGPUDevice *gpuDevice) {
+void CCVKSwapchain::destroySwapchain(CCVKGPUDevice *gpuDevice, bool defer) {
     if (_gpuSwapchain->vkSwapchain != VK_NULL_HANDLE) {
         _gpuSwapchain->swapchainImages.clear();
 
         // note: keep fullScreenExclusiveRequested, the new swapchain will re-acquire it
         releaseFullScreenExclusiveModeInternal();
 
+        if (defer) {
+            // commands recorded before the recreation may still reference the old image
+            // views: keep the swapchain and its texture views alive via retiredSwapchains
+            auto *colorTexture  = static_cast<CCVKTexture *>(_colorTexture.get());
+            auto *depthTexture  = static_cast<CCVKTexture *>(_depthStencilTexture.get());
+            // the entry owns the old handles; present() decides when it is due
+            gpuDevice->retiredSwapchains.push_back({gpuDevice->vkDevice,
+                                                    _gpuSwapchain->vkSwapchain,
+                                                    gpuDevice->frameIndex,
+                                                    colorTexture->gpuTexture(),
+                                                    colorTexture->gpuTextureView(),
+                                                    depthTexture->gpuTexture(),
+                                                    depthTexture->gpuTextureView()});
+        } else {
 #if CC_SWAPPY_ENABLED
-        SwappyVk_destroySwapchain(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain);
+            SwappyVk_destroySwapchain(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain);
 #endif
-
-        vkDestroySwapchainKHR(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain, nullptr);
+            vkDestroySwapchainKHR(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain, nullptr);
+        }
         _gpuSwapchain->vkSwapchain = VK_NULL_HANDLE;
         // reset index only after device not ready
         _gpuSwapchain->curImageIndex = 0;

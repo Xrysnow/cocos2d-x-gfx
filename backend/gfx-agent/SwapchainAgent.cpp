@@ -130,6 +130,10 @@ void SwapchainAgent::releaseFullScreenExclusiveMode() {
     mq->kickAndWait();
 }
 
+uint32_t SwapchainAgent::getGeneration() const {
+    return _actor->getGeneration();
+}
+
 void SwapchainAgent::updateInfo() {
     _generation = _actor->getGeneration();
     SwapchainTextureInfo textureInfo;

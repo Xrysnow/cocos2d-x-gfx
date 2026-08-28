@@ -27,6 +27,7 @@
 #include "GFXTexture.h"
 #include "base/Ptr.h"
 #include "gfx-base/GFXDef-common.h"
+#include <atomic>
 
 namespace cc {
 namespace gfx {
@@ -67,7 +68,7 @@ public:
     inline SurfaceTransform getSurfaceTransform() const { return _transform; }
     inline uint32_t getWidth() const { return _colorTexture->getWidth(); }
     inline uint32_t getHeight() const { return _colorTexture->getHeight(); }
-    inline uint32_t getGeneration() const { return _generation; }
+    virtual uint32_t getGeneration() const { return _generation; }
 
 protected:
     virtual void doInit(const SwapchainInfo &info) = 0;
@@ -84,7 +85,9 @@ protected:
     VsyncMode _vsyncMode{VsyncMode::RELAXED};
     SurfaceTransform _transform{SurfaceTransform::IDENTITY};
     bool _preRotationEnabled{false};
-    uint32_t _generation{0};
+    // atomic: the backend increments it on the device thread (recreation), the engine
+    // reads it from the main thread (default framebuffer rebuild decision)
+    std::atomic<uint32_t> _generation{0};
 
     IntrusivePtr<Texture> _colorTexture;
     IntrusivePtr<Texture> _depthStencilTexture;

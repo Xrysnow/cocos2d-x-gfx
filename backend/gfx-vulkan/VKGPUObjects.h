@@ -471,6 +471,10 @@ public:
     uint32_t curBackBufferIndex{0U};
     uint32_t backBufferCount{3U};
 
+    // monotonic frame counter, incremented per present(): a retired swapchain is
+    // destroyed only after backBufferCount presents (recreation frame's fence waited)
+    uint32_t frameIndex{0U};
+
     bool useDescriptorUpdateTemplate{false};
     bool useMultiDrawIndirect{false};
 
@@ -486,6 +490,79 @@ public:
     CCVKGPUGeneralBarrier defaultDepthStencilBarrier;
 
     ccstd::unordered_set<CCVKGPUSwapchain *> swapchains;
+
+    // swapchains retired by a recreation, kept alive with their texture views until the
+    // recreation frame's fence has been waited (see frameIndex). Destroying an entry
+    // releases the old textures/views first, then destroys the swapchain.
+    // Move-only: a copy would share the vkSwapchain handle and destroy it twice.
+    struct RetiredSwapchain {
+        RetiredSwapchain() = default;
+        RetiredSwapchain(VkDevice vkDevice, VkSwapchainKHR vkSwapchain, uint32_t retireFrame,
+                         IntrusivePtr<CCVKGPUTexture> colorTexture,
+                         IntrusivePtr<CCVKGPUTextureView> colorTextureView,
+                         IntrusivePtr<CCVKGPUTexture> depthTexture,
+                         IntrusivePtr<CCVKGPUTextureView> depthTextureView)
+        : vkDevice(vkDevice),
+          vkSwapchain(vkSwapchain),
+          retireFrame(retireFrame),
+          colorTexture(std::move(colorTexture)),
+          colorTextureView(std::move(colorTextureView)),
+          depthTexture(std::move(depthTexture)),
+          depthTextureView(std::move(depthTextureView)) {}
+
+        RetiredSwapchain(const RetiredSwapchain &) = delete;
+        RetiredSwapchain &operator=(const RetiredSwapchain &) = delete;
+
+        RetiredSwapchain(RetiredSwapchain &&o) noexcept
+        : vkDevice(o.vkDevice),
+          vkSwapchain(o.vkSwapchain),
+          retireFrame(o.retireFrame),
+          colorTexture(std::move(o.colorTexture)),
+          colorTextureView(std::move(o.colorTextureView)),
+          depthTexture(std::move(o.depthTexture)),
+          depthTextureView(std::move(o.depthTextureView)) {
+            o.vkSwapchain = VK_NULL_HANDLE; // ownership transferred
+        }
+
+        RetiredSwapchain &operator=(RetiredSwapchain &&o) noexcept {
+            if (this != &o) {
+                reset();
+                vkDevice = o.vkDevice;
+                vkSwapchain = o.vkSwapchain;
+                retireFrame = o.retireFrame;
+                colorTexture = std::move(o.colorTexture);
+                colorTextureView = std::move(o.colorTextureView);
+                depthTexture = std::move(o.depthTexture);
+                depthTextureView = std::move(o.depthTextureView);
+                o.vkSwapchain = VK_NULL_HANDLE; // ownership transferred
+            }
+            return *this;
+        }
+
+        ~RetiredSwapchain() { reset(); }
+
+        void reset() {
+            // views/textures reference the swapchain's images: release them first
+            colorTexture = nullptr;
+            colorTextureView = nullptr;
+            depthTexture = nullptr;
+            depthTextureView = nullptr;
+            if (vkSwapchain != VK_NULL_HANDLE) {
+                vkDestroySwapchainKHR(vkDevice, vkSwapchain, nullptr);
+                vkSwapchain = VK_NULL_HANDLE;
+            }
+        }
+
+        VkDevice vkDevice{VK_NULL_HANDLE};
+        VkSwapchainKHR vkSwapchain{VK_NULL_HANDLE};
+        // value of CCVKGPUDevice::frameIndex when the swapchain was retired
+        uint32_t retireFrame{0U};
+        IntrusivePtr<CCVKGPUTexture> colorTexture;
+        IntrusivePtr<CCVKGPUTextureView> colorTextureView;
+        IntrusivePtr<CCVKGPUTexture> depthTexture;
+        IntrusivePtr<CCVKGPUTextureView> depthTextureView;
+    };
+    ccstd::vector<RetiredSwapchain> retiredSwapchains;
 
     CCVKGPUCommandBufferPool *getCommandBufferPool();
     CCVKGPUDescriptorSetPool *getDescriptorSetPool(uint32_t layoutID);

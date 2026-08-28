@@ -39,6 +39,8 @@ public:
     void acquireFullScreenExclusiveMode() override;
     void releaseFullScreenExclusiveMode() override;
 
+    uint32_t getGeneration() const override;
+
     inline bool isInited() const { return _inited; }
 
 protected:

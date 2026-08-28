@@ -64,7 +64,7 @@ protected:
     void doCreateSurface(void *windowHandle) override;
 
     void createVkSurface();
-    void destroySwapchain(CCVKGPUDevice *gpuDevice);
+    void destroySwapchain(CCVKGPUDevice *gpuDevice, bool defer = false);
 
     bool canQuerySurfaceCapabilities2() const;
     bool isFullScreenExclusiveSupported() const;

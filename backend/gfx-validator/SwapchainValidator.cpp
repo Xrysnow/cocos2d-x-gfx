@@ -84,6 +84,10 @@ void SwapchainValidator::doDestroy() {
     _actor->destroy();
 }
 
+uint32_t SwapchainValidator::getGeneration() const {
+    return _actor->getGeneration();
+}
+
 void SwapchainValidator::updateInfo() {
     _generation = _actor->getGeneration();
     SwapchainTextureInfo textureInfo;
