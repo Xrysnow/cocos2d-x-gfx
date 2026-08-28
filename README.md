@@ -1,8 +1,6 @@
 # cocos2d-x-gfx
 
-This is a renderer for [cocos2d-x](https://github.com/cocos2d/cocos2d-x) ported from [cocos-engine](https://github.com/cocos/cocos-engine).
-
-Now it is based on [this branch of cocos-engine](https://github.com/cocos/cocos-engine/tree/v3.5.0) and works with [this branch of cocos2d-x](https://github.com/Xrysnow/cocos2d-x/tree/gfx).
+This is a renderer for [cocos2d-x](https://github.com/cocos2d/cocos2d-x) ported from [cocos4](https://github.com/cocos/cocos4). It works with [this branch of cocos2d-x](https://github.com/Xrysnow/cocos-x).
 
 ### Dependencies
 
@@ -13,4 +11,4 @@ Now it is based on [this branch of cocos-engine](https://github.com/cocos/cocos-
 
 ### CMake usage
 
-- See https://github.com/Xrysnow/cocos2d-x-3rd-party-libs-bin/blob/gfx/CMakeLists.txt
+- See https://github.com/Xrysnow/cocos-x-external/blob/main/CMakeLists.txt
