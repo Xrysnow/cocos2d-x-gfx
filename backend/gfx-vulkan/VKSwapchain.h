@@ -45,6 +45,11 @@ public:
 
     bool checkSwapchainStatus(uint32_t width = 0, uint32_t height = 0);
 
+    // record the initial UNDEFINED→(PRESENT / DEPTH_STENCIL_ATTACHMENT) transition of a
+    // given swapchain image (must be called after vkAcquireNextImageKHR: using a
+    // presentable image before acquire is invalid)
+    void recordInitialTransition(uint32_t imageIndex);
+
     // VK_EXT_full_screen_exclusive: the swapchain is created with the surface-supported
     // full screen exclusive mode (preferred: VK_FULL_SCREEN_EXCLUSIVE_APPLICATION_CONTROLLED_EXT,
     // fallback: VK_FULL_SCREEN_EXCLUSIVE_ALLOWED_EXT, queried per-surface before creation with

@@ -407,13 +407,13 @@ bool CCVKDevice::doInit(const DeviceInfo & /*info*/) {
         _gpuFencePools.push_back(std::make_unique<CCVKGPUFencePool>(_gpuDevice.get()));
         _gpuRecycleBins.push_back(std::make_unique<CCVKGPURecycleBin>(_gpuDevice.get()));
         _gpuStagingBufferPools.push_back(std::make_unique<CCVKGPUStagingBufferPool>(_gpuDevice.get()));
+        _gpuSemaphorePools.push_back(std::make_unique<CCVKGPUSemaphorePool>(_gpuDevice.get()));
     }
 
     _gpuBufferHub = std::make_unique<CCVKGPUBufferHub>(_gpuDevice.get());
     _gpuIAHub = std::make_unique<CCVKGPUInputAssemblerHub>(_gpuDevice.get());
     _gpuTransportHub = std::make_unique<CCVKGPUTransportHub>(_gpuDevice.get(), static_cast<CCVKQueue *>(_queue)->gpuQueue());
     _gpuDescriptorHub = std::make_unique<CCVKGPUDescriptorHub>(_gpuDevice.get());
-    _gpuSemaphorePool = std::make_unique<CCVKGPUSemaphorePool>(_gpuDevice.get());
     _gpuBarrierManager = std::make_unique<CCVKGPUBarrierManager>(_gpuDevice.get());
     _gpuDescriptorSetHub = std::make_unique<CCVKGPUDescriptorSetHub>(_gpuDevice.get());
 
@@ -522,7 +522,7 @@ void CCVKDevice::doDestroy() {
 
     _gpuBufferHub = nullptr;
     _gpuTransportHub = nullptr;
-    _gpuSemaphorePool = nullptr;
+    _gpuSemaphorePools.clear();
     _gpuDescriptorHub = nullptr;
     _gpuBarrierManager = nullptr;
     _gpuDescriptorSetHub = nullptr;
@@ -616,6 +616,7 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
 
     auto *queue = static_cast<CCVKQueue *>(_queue);
     queue->gpuQueue()->lastSignaledSemaphores.clear();
+    queue->gpuQueue()->currentPresentSemaphores.clear();
     vkSwapchainIndices.clear();
     gpuSwapchains.clear();
     vkSwapchains.clear();
@@ -636,13 +637,13 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
     }
 
     _gpuDescriptorSetHub->flush();
-    _gpuSemaphorePool->reset();
+    gpuSemaphorePool()->reset();
 
     for (uint32_t i = 0; i < vkSwapchains.size(); ++i) {
         if (!vkSwapchains[i]) {
             continue;
         }
-        VkSemaphore acquireSemaphore = _gpuSemaphorePool->alloc();
+        VkSemaphore acquireSemaphore = gpuSemaphorePool()->alloc();
         VkResult res = vkAcquireNextImageKHR(_gpuDevice->vkDevice, vkSwapchains[i], ~0ULL,
                                              acquireSemaphore, VK_NULL_HANDLE, &vkSwapchainIndices[i]);
         //CC_ASSERT(res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR);
@@ -653,13 +654,22 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
             }
             gpuSwapchains[i] = swapchain->gpuSwapchain();
             vkSwapchains[i] = swapchain->gpuSwapchain()->vkSwapchain;
-            acquireSemaphore = _gpuSemaphorePool->alloc();
+            acquireSemaphore = gpuSemaphorePool()->alloc();
             vkAcquireNextImageKHR(_gpuDevice->vkDevice, vkSwapchains[i], ~0ULL,
                 acquireSemaphore, VK_NULL_HANDLE, &vkSwapchainIndices[i]);
         }
 
         gpuSwapchains[i]->curImageIndex = vkSwapchainIndices[i];
         queue->gpuQueue()->lastSignaledSemaphores.push_back(acquireSemaphore);
+        queue->gpuQueue()->currentPresentSemaphores.push_back(gpuSwapchains[i]->presentSemaphores[vkSwapchainIndices[i]]);
+
+        // first use of this image since the (re)creation: its layout is UNDEFINED; record
+        // the initial transition now, after the acquire, so the frame's submit executes
+        // it legally (UNASSIGNED-non-acquired-swapchain-image-used)
+        if (!gpuSwapchains[i]->imageInitialized[vkSwapchainIndices[i]]) {
+            gpuSwapchains[i]->imageInitialized[vkSwapchainIndices[i]] = true;
+            static_cast<CCVKSwapchain *>(swapchains[i])->recordInitialTransition(vkSwapchainIndices[i]);
+        }
 
         vkAcquireBarriers[i].image = gpuSwapchains[i]->swapchainImages[vkSwapchainIndices[i]];
         vkPresentBarriers[i].image = gpuSwapchains[i]->swapchainImages[vkSwapchainIndices[i]];
@@ -751,6 +761,7 @@ void CCVKDevice::frameSync() {
 }
 
 CCVKGPUFencePool *CCVKDevice::gpuFencePool() { return _gpuFencePools[_gpuDevice->curBackBufferIndex].get(); }
+CCVKGPUSemaphorePool *CCVKDevice::gpuSemaphorePool() const { return _gpuSemaphorePools[_gpuDevice->curBackBufferIndex].get(); }
 CCVKGPURecycleBin *CCVKDevice::gpuRecycleBin() { return _gpuRecycleBins[_gpuDevice->curBackBufferIndex].get(); }
 CCVKGPUStagingBufferPool *CCVKDevice::gpuStagingBufferPool() { return _gpuStagingBufferPools[_gpuDevice->curBackBufferIndex].get(); }
 
@@ -777,6 +788,7 @@ void CCVKDevice::updateBackBufferCount(uint32_t backBufferCount) {
         _gpuFencePools.push_back(std::make_unique<CCVKGPUFencePool>(_gpuDevice.get()));
         _gpuRecycleBins.push_back(std::make_unique<CCVKGPURecycleBin>(_gpuDevice.get()));
         _gpuStagingBufferPools.push_back(std::make_unique<CCVKGPUStagingBufferPool>(_gpuDevice.get()));
+        _gpuSemaphorePools.push_back(std::make_unique<CCVKGPUSemaphorePool>(_gpuDevice.get()));
     }
     _gpuBufferHub->updateBackBufferCount(backBufferCount);
     _gpuDescriptorSetHub->updateBackBufferCount(backBufferCount);

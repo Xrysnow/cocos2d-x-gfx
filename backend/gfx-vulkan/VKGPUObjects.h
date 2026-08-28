@@ -309,6 +309,13 @@ struct CCVKGPUSwapchain : public CCVKGPUDeviceObject {
 
     // external references
     ccstd::vector<VkImage> swapchainImages;
+    // per image: has the initial UNDEFINED→(PRESENT/DEPTH_STENCIL) transition been
+    // recorded after acquisition? (presentable images may not be used before acquire)
+    ccstd::vector<bool> imageInitialized;
+    // render-finished (present-wait) semaphore per swapchain image: image i cannot be
+    // re-acquired until its previous present has completed, so signaling this semaphore
+    // again for image i is always safe (VUID-vkQueueSubmit-pSignalSemaphores-00067)
+    ccstd::vector<VkSemaphore> presentSemaphores;
 };
 
 struct CCVKGPUCommandBuffer : public CCVKGPUDeviceObject {
@@ -325,6 +332,7 @@ struct CCVKGPUQueue {
     uint32_t queueFamilyIndex = 0U;
     ccstd::vector<uint32_t> possibleQueueFamilyIndices;
     ccstd::vector<VkSemaphore> lastSignaledSemaphores;
+    ccstd::vector<VkSemaphore> currentPresentSemaphores; // render-finished sems of the frames being acquired
     ccstd::vector<VkPipelineStageFlags> submitStageMasks;
     ccstd::vector<VkCommandBuffer> commandBuffers;
 };
@@ -501,14 +509,16 @@ public:
                          IntrusivePtr<CCVKGPUTexture> colorTexture,
                          IntrusivePtr<CCVKGPUTextureView> colorTextureView,
                          IntrusivePtr<CCVKGPUTexture> depthTexture,
-                         IntrusivePtr<CCVKGPUTextureView> depthTextureView)
+                         IntrusivePtr<CCVKGPUTextureView> depthTextureView,
+                         ccstd::vector<VkSemaphore> presentSemaphores)
         : vkDevice(vkDevice),
           vkSwapchain(vkSwapchain),
           retireFrame(retireFrame),
           colorTexture(std::move(colorTexture)),
           colorTextureView(std::move(colorTextureView)),
           depthTexture(std::move(depthTexture)),
-          depthTextureView(std::move(depthTextureView)) {}
+          depthTextureView(std::move(depthTextureView)),
+          presentSemaphores(std::move(presentSemaphores)) {}
 
         RetiredSwapchain(const RetiredSwapchain &) = delete;
         RetiredSwapchain &operator=(const RetiredSwapchain &) = delete;
@@ -520,7 +530,8 @@ public:
           colorTexture(std::move(o.colorTexture)),
           colorTextureView(std::move(o.colorTextureView)),
           depthTexture(std::move(o.depthTexture)),
-          depthTextureView(std::move(o.depthTextureView)) {
+          depthTextureView(std::move(o.depthTextureView)),
+          presentSemaphores(std::move(o.presentSemaphores)) {
             o.vkSwapchain = VK_NULL_HANDLE; // ownership transferred
         }
 
@@ -534,6 +545,7 @@ public:
                 colorTextureView = std::move(o.colorTextureView);
                 depthTexture = std::move(o.depthTexture);
                 depthTextureView = std::move(o.depthTextureView);
+                presentSemaphores = std::move(o.presentSemaphores);
                 o.vkSwapchain = VK_NULL_HANDLE; // ownership transferred
             }
             return *this;
@@ -551,6 +563,10 @@ public:
                 vkDestroySwapchainKHR(vkDevice, vkSwapchain, nullptr);
                 vkSwapchain = VK_NULL_HANDLE;
             }
+            for (VkSemaphore semaphore : presentSemaphores) {
+                vkDestroySemaphore(vkDevice, semaphore, nullptr);
+            }
+            presentSemaphores.clear();
         }
 
         VkDevice vkDevice{VK_NULL_HANDLE};
@@ -561,6 +577,7 @@ public:
         IntrusivePtr<CCVKGPUTextureView> colorTextureView;
         IntrusivePtr<CCVKGPUTexture> depthTexture;
         IntrusivePtr<CCVKGPUTextureView> depthTextureView;
+        ccstd::vector<VkSemaphore> presentSemaphores;
     };
     ccstd::vector<RetiredSwapchain> retiredSwapchains;
 

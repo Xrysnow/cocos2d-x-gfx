@@ -379,6 +379,17 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
     _gpuSwapchain->swapchainImages.resize(imageCount);
     VK_CHECK(vkGetSwapchainImagesKHR(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain, &imageCount, _gpuSwapchain->swapchainImages.data()));
 
+    // one render-finished semaphore per swapchain image: reusing sem[i] is safe because
+    // image i cannot be acquired again until its previous present has completed
+    _gpuSwapchain->presentSemaphores.clear();
+    _gpuSwapchain->presentSemaphores.reserve(imageCount);
+    for (uint32_t i = 0U; i < imageCount; ++i) {
+        VkSemaphore semaphore = VK_NULL_HANDLE;
+        VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+        VK_CHECK(vkCreateSemaphore(gpuDevice->vkDevice, &semaphoreInfo, nullptr, &semaphore));
+        _gpuSwapchain->presentSemaphores.push_back(semaphore);
+    }
+
     ++_generation;
 
     // should skip size check, since the old swapchain has already been destroyed
@@ -387,43 +398,16 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
     _colorTexture->resize(newWidth, newHeight);
     _depthStencilTexture->resize(newWidth, newHeight);
 
-    bool hasStencil = GFX_FORMAT_INFOS[toNumber(_depthStencilTexture->getFormat())].hasStencil;
-    ccstd::vector<VkImageMemoryBarrier> barriers(imageCount * 2, VkImageMemoryBarrier{});
-    VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    ThsvsImageBarrier tempBarrier{};
-    tempBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    tempBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    tempBarrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
-    tempBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
-    VkPipelineStageFlags tempSrcStageMask = 0;
-    VkPipelineStageFlags tempDstStageMask = 0;
+    // The initial UNDEFINED→(PRESENT/DEPTH_STENCIL) transition is recorded per image at
+    // its first acquisition (recordInitialTransition from VKDevice::acquire, executed
+    // with the frame's submit): using a presentable image — layout transitions included
+    // — before vkAcquireNextImageKHR is invalid (UNASSIGNED-non-acquired-swapchain-image-used).
+    // currentAccessTypes keeps the "after the initial transition" state the rest of the
+    // pipeline deduces against.
+    _gpuSwapchain->imageInitialized.assign(imageCount, false);
+
     auto *colorGPUTexture = static_cast<CCVKTexture *>(_colorTexture.get())->gpuTexture();
     auto *depthStencilGPUTexture = static_cast<CCVKTexture *>(_depthStencilTexture.get())->gpuTexture();
-    for (uint32_t i = 0U; i < imageCount; i++) {
-        tempBarrier.nextAccessCount = 1;
-        tempBarrier.pNextAccesses = getAccessType(AccessFlagBit::PRESENT);
-        tempBarrier.image = _gpuSwapchain->swapchainImages[i];
-        tempBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        thsvsGetVulkanImageMemoryBarrier(tempBarrier, &tempSrcStageMask, &tempDstStageMask, &barriers[i]);
-        srcStageMask |= tempSrcStageMask;
-        dstStageMask |= tempDstStageMask;
-
-        tempBarrier.nextAccessCount = 1;
-        tempBarrier.pNextAccesses = getAccessType(AccessFlagBit::DEPTH_STENCIL_ATTACHMENT_WRITE);
-        tempBarrier.image = depthStencilGPUTexture->swapchainVkImages[i];
-        tempBarrier.subresourceRange.aspectMask = hasStencil ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
-        thsvsGetVulkanImageMemoryBarrier(tempBarrier, &tempSrcStageMask, &tempDstStageMask, &barriers[imageCount + i]);
-        srcStageMask |= tempSrcStageMask;
-        dstStageMask |= tempDstStageMask;
-    }
-    CCVKDevice::getInstance()->gpuTransportHub()->checkIn(
-        [&](const CCVKGPUCommandBuffer *gpuCommandBuffer) {
-            vkCmdPipelineBarrier(gpuCommandBuffer->vkCommandBuffer, srcStageMask, dstStageMask, 0, 0, nullptr, 0, nullptr,
-                                 utils::toUint(barriers.size()), barriers.data());
-        },
-        true); // submit immediately
-
     colorGPUTexture->currentAccessTypes.assign(1, THSVS_ACCESS_PRESENT);
     depthStencilGPUTexture->currentAccessTypes.assign(1, THSVS_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ);
 
@@ -461,6 +445,51 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
     return true;
 }
 
+void CCVKSwapchain::recordInitialTransition(uint32_t imageIndex) {
+    // layout of a brand-new swapchain image is UNDEFINED; presentable images may only be
+    // used — layout transitions included — after vkAcquireNextImageKHR, so the initial
+    // transition is recorded here (executed by the frame's submit, right after the
+    // acquire) instead of immediately after vkCreateSwapchainKHR
+    auto *colorGPUTexture = static_cast<CCVKTexture *>(_colorTexture.get())->gpuTexture();
+    auto *depthStencilGPUTexture = static_cast<CCVKTexture *>(_depthStencilTexture.get())->gpuTexture();
+    const bool hasStencil = GFX_FORMAT_INFOS[toNumber(_depthStencilTexture->getFormat())].hasStencil;
+
+    ThsvsImageBarrier tempBarrier{};
+    tempBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    tempBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    tempBarrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    tempBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+    ccstd::vector<VkImageMemoryBarrier> barriers(2, VkImageMemoryBarrier{});
+    VkPipelineStageFlags srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    VkPipelineStageFlags tempSrcStageMask = 0;
+    VkPipelineStageFlags tempDstStageMask = 0;
+
+    tempBarrier.nextAccessCount = 1;
+    tempBarrier.pNextAccesses = getAccessType(AccessFlagBit::PRESENT);
+    tempBarrier.image = _gpuSwapchain->swapchainImages[imageIndex];
+    tempBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    thsvsGetVulkanImageMemoryBarrier(tempBarrier, &tempSrcStageMask, &tempDstStageMask, &barriers[0]);
+    srcStageMask |= tempSrcStageMask;
+    dstStageMask |= tempDstStageMask;
+
+    tempBarrier.nextAccessCount = 1;
+    tempBarrier.pNextAccesses = getAccessType(AccessFlagBit::DEPTH_STENCIL_ATTACHMENT_WRITE);
+    tempBarrier.image = depthStencilGPUTexture->swapchainVkImages[imageIndex];
+    tempBarrier.subresourceRange.aspectMask = hasStencil ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+    thsvsGetVulkanImageMemoryBarrier(tempBarrier, &tempSrcStageMask, &tempDstStageMask, &barriers[1]);
+    srcStageMask |= tempSrcStageMask;
+    dstStageMask |= tempDstStageMask;
+
+    CCVKDevice::getInstance()->gpuTransportHub()->checkIn(
+        [&](const CCVKGPUCommandBuffer *gpuCommandBuffer) {
+            vkCmdPipelineBarrier(gpuCommandBuffer->vkCommandBuffer, srcStageMask, dstStageMask, 0, 0, nullptr, 0, nullptr,
+                                 utils::toUint(barriers.size()), barriers.data());
+        },
+        false); // recorded (not immediate): submitted with the frame, after the acquire
+}
+
 void CCVKSwapchain::destroySwapchain(CCVKGPUDevice *gpuDevice, bool defer) {
     if (_gpuSwapchain->vkSwapchain != VK_NULL_HANDLE) {
         _gpuSwapchain->swapchainImages.clear();
@@ -470,7 +499,9 @@ void CCVKSwapchain::destroySwapchain(CCVKGPUDevice *gpuDevice, bool defer) {
 
         if (defer) {
             // commands recorded before the recreation may still reference the old image
-            // views: keep the swapchain and its texture views alive via retiredSwapchains
+            // views: keep the swapchain and its texture views alive via retiredSwapchains.
+            // The old present semaphores move along so their lifetime always matches the
+            // swapchain (presents on the old chain may still wait on them).
             auto *colorTexture  = static_cast<CCVKTexture *>(_colorTexture.get());
             auto *depthTexture  = static_cast<CCVKTexture *>(_depthStencilTexture.get());
             // the entry owns the old handles; present() decides when it is due
@@ -480,12 +511,17 @@ void CCVKSwapchain::destroySwapchain(CCVKGPUDevice *gpuDevice, bool defer) {
                                                     colorTexture->gpuTexture(),
                                                     colorTexture->gpuTextureView(),
                                                     depthTexture->gpuTexture(),
-                                                    depthTexture->gpuTextureView()});
+                                                    depthTexture->gpuTextureView(),
+                                                    std::move(_gpuSwapchain->presentSemaphores)});
         } else {
 #if CC_SWAPPY_ENABLED
             SwappyVk_destroySwapchain(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain);
 #endif
             vkDestroySwapchainKHR(gpuDevice->vkDevice, _gpuSwapchain->vkSwapchain, nullptr);
+            for (VkSemaphore semaphore : _gpuSwapchain->presentSemaphores) {
+                vkDestroySemaphore(gpuDevice->vkDevice, semaphore, nullptr);
+            }
+            _gpuSwapchain->presentSemaphores.clear();
         }
         _gpuSwapchain->vkSwapchain = VK_NULL_HANDLE;
         // reset index only after device not ready

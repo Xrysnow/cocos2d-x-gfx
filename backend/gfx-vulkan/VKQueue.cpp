@@ -80,7 +80,6 @@ void CCVKQueue::submit(CommandBuffer *const *cmdBuffs, uint32_t count) {
     }
 
     size_t waitSemaphoreCount = _gpuQueue->lastSignaledSemaphores.size();
-    VkSemaphore signal = waitSemaphoreCount ? device->gpuSemaphorePool()->alloc() : VK_NULL_HANDLE;
     _gpuQueue->submitStageMasks.resize(waitSemaphoreCount, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
 
     VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -89,13 +88,18 @@ void CCVKQueue::submit(CommandBuffer *const *cmdBuffs, uint32_t count) {
     submitInfo.pWaitDstStageMask = _gpuQueue->submitStageMasks.data();
     submitInfo.commandBufferCount = utils::toUint(_gpuQueue->commandBuffers.size());
     submitInfo.pCommandBuffers = &_gpuQueue->commandBuffers[0];
-    submitInfo.signalSemaphoreCount = waitSemaphoreCount ? 1 : 0;
-    submitInfo.pSignalSemaphores = &signal;
+    if (waitSemaphoreCount) {
+        // signal the per-image render-finished semaphores chosen by acquire(): each one is
+        // keyed to the acquired swapchain image and can only be reused after that image's
+        // previous present completed (VUID-vkQueueSubmit-pSignalSemaphores-00067)
+        submitInfo.signalSemaphoreCount = utils::toUint(_gpuQueue->currentPresentSemaphores.size());
+        submitInfo.pSignalSemaphores = _gpuQueue->currentPresentSemaphores.data();
+    }
 
     VkFence vkFence = device->gpuFencePool()->alloc();
     VK_CHECK(vkQueueSubmit(_gpuQueue->vkQueue, 1, &submitInfo, vkFence));
 
-    _gpuQueue->lastSignaledSemaphores.assign(1, signal);
+    _gpuQueue->lastSignaledSemaphores = _gpuQueue->currentPresentSemaphores;
 }
 
 } // namespace gfx

@@ -92,7 +92,7 @@ public:
     inline CCVKGPUBufferHub *gpuBufferHub() const { return _gpuBufferHub.get(); }
     inline CCVKGPUTransportHub *gpuTransportHub() const { return _gpuTransportHub.get(); }
     inline CCVKGPUDescriptorHub *gpuDescriptorHub() const { return _gpuDescriptorHub.get(); }
-    inline CCVKGPUSemaphorePool *gpuSemaphorePool() const { return _gpuSemaphorePool.get(); }
+    CCVKGPUSemaphorePool *gpuSemaphorePool() const;
     inline CCVKGPUBarrierManager *gpuBarrierManager() const { return _gpuBarrierManager.get(); }
     inline CCVKGPUDescriptorSetHub *gpuDescriptorSetHub() const { return _gpuDescriptorSetHub.get(); }
     inline CCVKGPUInputAssemblerHub *gpuIAHub() const { return _gpuIAHub.get(); }
@@ -152,7 +152,9 @@ protected:
     std::unique_ptr<CCVKGPUBufferHub> _gpuBufferHub;
     std::unique_ptr<CCVKGPUTransportHub> _gpuTransportHub;
     std::unique_ptr<CCVKGPUDescriptorHub> _gpuDescriptorHub;
-    std::unique_ptr<CCVKGPUSemaphorePool> _gpuSemaphorePool;
+    // acquire-semaphore pool per frame slot: a slot's semaphores are only reused after
+    // the fence of the frame that used the slot backBufferCount frames ago was waited
+    ccstd::vector<std::unique_ptr<CCVKGPUSemaphorePool>> _gpuSemaphorePools;
     std::unique_ptr<CCVKGPUBarrierManager> _gpuBarrierManager;
     std::unique_ptr<CCVKGPUDescriptorSetHub> _gpuDescriptorSetHub;
     std::unique_ptr<CCVKGPUInputAssemblerHub> _gpuIAHub;
