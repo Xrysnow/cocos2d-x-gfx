@@ -614,6 +614,21 @@ VkImageMemoryBarrier presentBarrier{
 void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
     if (_onAcquire) _onAcquire->execute();
 
+    // A frame that reached acquire() but never submitted (rendering is skipped while the
+    // window is being resized/minimized) leaves barrier records in the transport hub: they
+    // reference images acquired with semaphores the upcoming submit will not wait on
+    // (UNASSIGNED-non-acquired-swapchain-image-used). Drop them and reset the per-image
+    // initial-transition flags so the dropped transitions get re-recorded on next use.
+    const bool staleEarly = !_gpuTransportHub->empty(false);
+    const bool staleLate = !_gpuTransportHub->empty(true);
+    if (staleEarly) _gpuTransportHub->discard(false);
+    if (staleLate) _gpuTransportHub->discard(true);
+    if (staleEarly || staleLate) {
+        for (CCVKGPUSwapchain *swapchainGPU : _gpuDevice->swapchains) {
+            std::fill(swapchainGPU->imageInitialized.begin(), swapchainGPU->imageInitialized.end(), false);
+        }
+    }
+
     auto *queue = static_cast<CCVKQueue *>(_queue);
     queue->gpuQueue()->lastSignaledSemaphores.clear();
     queue->gpuQueue()->currentPresentSemaphores.clear();
@@ -662,6 +677,7 @@ void CCVKDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
         gpuSwapchains[i]->curImageIndex = vkSwapchainIndices[i];
         queue->gpuQueue()->lastSignaledSemaphores.push_back(acquireSemaphore);
         queue->gpuQueue()->currentPresentSemaphores.push_back(gpuSwapchains[i]->presentSemaphores[vkSwapchainIndices[i]]);
+        queue->gpuQueue()->frameAcquirePending = true;
 
         // first use of this image since the (re)creation: its layout is UNDEFINED; record
         // the initial transition now, after the acquire, so the frame's submit executes
@@ -966,16 +982,50 @@ void CCVKDevice::copyTextureToBuffers(Texture *srcTexture, uint8_t *const *buffe
     }
 
     uint32_t texelSize = GFX_FORMAT_INFOS[toNumber(format)].size;
-    IntrusivePtr<CCVKGPUBufferView> stagingBuffer = gpuStagingBufferPool()->alloc(totalSize, texelSize);
+
+    // The staging pool is built from fixed CHUNK_SIZE blocks (alloc asserts size <= CHUNK_SIZE),
+    // so readbacks larger than one block (4K/QHD+ full-screen captures, big render-target
+    // snapshots) must bypass it with a one-off host-visible buffer. The immediate submit below
+    // waits its fence, hence the buffer can be released at function exit (recycle bin frees the
+    // Vulkan handles after the frame's device wait).
+    IntrusivePtr<CCVKGPUBufferView> stagingBuffer;
+    if (totalSize > CCVKGPUStagingBufferPool::CHUNK_SIZE) {
+        auto *readbackBuffer = ccnew CCVKGPUBuffer;
+        readbackBuffer->size = totalSize;
+        readbackBuffer->usage = BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST;
+        readbackBuffer->memUsage = MemoryUsage::HOST;
+        readbackBuffer->init();
+        auto *bufferView = ccnew CCVKGPUBufferView;
+        bufferView->gpuBuffer = readbackBuffer;
+        bufferView->range = totalSize;
+        stagingBuffer = bufferView;
+    } else {
+        stagingBuffer = gpuStagingBufferPool()->alloc(totalSize, texelSize);
+    }
 
     // make sure the src texture is up-to-date
     waitAllFences();
+
+    // if the source is a presentable swapchain image of the current frame, the out-of-band
+    // readback submit must wait the frame's acquire semaphore before touching it
+    // (UNASSIGNED-non-acquired-swapchain-image-used)
+    auto *queue = static_cast<CCVKQueue *>(_queue);
+    const auto &acquireSemaphores = queue->gpuQueue()->lastSignaledSemaphores;
+    const auto *waitSemaphores =
+        (queue->gpuQueue()->frameAcquirePending && !acquireSemaphores.empty()) ? &acquireSemaphores : nullptr;
 
     _gpuTransportHub->checkIn(
         [&](CCVKGPUCommandBuffer *cmdBuffer) {
             cmdFuncCCVKCopyTextureToBuffers(this, static_cast<const CCVKTexture *>(srcTexture)->gpuTexture(), stagingBuffer, regions, count, cmdBuffer);
         },
-        true);
+        true, false, waitSemaphores);
+
+    if (waitSemaphores) {
+        // checkIn(immediate) waits the fence, so the acquire semaphores have been consumed
+        // here: the frame's own submit must not wait them again (waiting an unsignaled,
+        // never-resignaled binary semaphore would hang the queue indefinitely)
+        queue->gpuQueue()->lastSignaledSemaphores.clear();
+    }
 
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t regionOffset = 0;

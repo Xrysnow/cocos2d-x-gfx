@@ -80,7 +80,11 @@ void CCVKQueue::submit(CommandBuffer *const *cmdBuffs, uint32_t count) {
     }
 
     size_t waitSemaphoreCount = _gpuQueue->lastSignaledSemaphores.size();
-    _gpuQueue->submitStageMasks.resize(waitSemaphoreCount, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    // pad one extra element (same value) so a validator reading the 32-bit wait-mask array
+    // at 64-bit granularity cannot overread a single-element allocation
+    // (VUIDs -parameter/00066/04090..04096/00078; see CCVKGPUTransportHub::checkIn)
+    _gpuQueue->submitStageMasks.assign(waitSemaphoreCount, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    _gpuQueue->submitStageMasks.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
 
     VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submitInfo.waitSemaphoreCount = utils::toUint(waitSemaphoreCount);
@@ -88,10 +92,13 @@ void CCVKQueue::submit(CommandBuffer *const *cmdBuffs, uint32_t count) {
     submitInfo.pWaitDstStageMask = _gpuQueue->submitStageMasks.data();
     submitInfo.commandBufferCount = utils::toUint(_gpuQueue->commandBuffers.size());
     submitInfo.pCommandBuffers = &_gpuQueue->commandBuffers[0];
-    if (waitSemaphoreCount) {
-        // signal the per-image render-finished semaphores chosen by acquire(): each one is
-        // keyed to the acquired swapchain image and can only be reused after that image's
-        // previous present completed (VUID-vkQueueSubmit-pSignalSemaphores-00067)
+    // signal the per-image render-finished semaphores chosen by acquire(): each one is
+    // keyed to the acquired swapchain image and can only be reused after that image's
+    // previous present completed (VUID-vkQueueSubmit-pSignalSemaphores-00067).
+    // This is independent of the wait list: an out-of-band readback may have consumed
+    // the acquire semaphores (clearing lastSignaledSemaphores), but present() still
+    // needs the render-finished signals.
+    if (!_gpuQueue->currentPresentSemaphores.empty()) {
         submitInfo.signalSemaphoreCount = utils::toUint(_gpuQueue->currentPresentSemaphores.size());
         submitInfo.pSignalSemaphores = _gpuQueue->currentPresentSemaphores.data();
     }
@@ -100,6 +107,7 @@ void CCVKQueue::submit(CommandBuffer *const *cmdBuffs, uint32_t count) {
     VK_CHECK(vkQueueSubmit(_gpuQueue->vkQueue, 1, &submitInfo, vkFence));
 
     _gpuQueue->lastSignaledSemaphores = _gpuQueue->currentPresentSemaphores;
+    _gpuQueue->frameAcquirePending = false; // acquire semaphores have been consumed by this submit
 }
 
 } // namespace gfx

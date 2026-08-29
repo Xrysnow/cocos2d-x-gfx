@@ -118,6 +118,81 @@ void cmdFuncCCVKCreateQueryPool(CCVKDevice *device, CCVKGPUQueryPool *gpuQueryPo
     VK_CHECK(vkCreateQueryPool(device->gpuDevice()->vkDevice, &queryPoolInfo, nullptr, &gpuQueryPool->vkPool));
 }
 
+// The layout a texture "rests in" between frames: the engine's render passes declare
+// initial/final layouts from the attachment barriers (typically SHADER_READ_ONLY for
+// sampled attachments), and validation tracks the layout at descriptor-write time, so
+// every submission must end with the image back in this layout. The selection mirrors
+// the creation-time transition: SAMPLED wins, then STORAGE (GENERAL), then color/depth
+// attachment layouts.
+static ThsvsAccessType getInitialAccessType(const CCVKGPUTexture *gpuTexture) {
+    if (hasFlag(gpuTexture->usage, TextureUsageBit::SAMPLED)) {
+        return THSVS_ACCESS_FRAGMENT_SHADER_READ_SAMPLED_IMAGE_OR_UNIFORM_TEXEL_BUFFER;
+    }
+    if (hasFlag(gpuTexture->usage, TextureUsageBit::STORAGE)) {
+        return THSVS_ACCESS_FRAGMENT_SHADER_READ_OTHER;
+    }
+    if (hasFlag(gpuTexture->usage, TextureUsageBit::COLOR_ATTACHMENT)) {
+        return THSVS_ACCESS_COLOR_ATTACHMENT_WRITE;
+    }
+    if (hasFlag(gpuTexture->usage, TextureUsageBit::DEPTH_STENCIL_ATTACHMENT)) {
+        return THSVS_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE;
+    }
+    return THSVS_ACCESS_NONE;
+}
+
+// Records a barrier that brings a freshly used texture back from its transfer layout
+// (TRANSFER_DST after an upload, TRANSFER_SRC after a readback) to the resting layout,
+// in the same command buffer/submission. Without it the submission ends with the image
+// tracked in a transfer layout: a descriptor set written before the next draw then
+// records that transfer layout, and the lazy barrier-manager transition back to
+// SHADER_READ_ONLY makes validation report VUID-vkCmdDraw-None-09600
+// (expects TRANSFER_DST_OPTIMAL instead of SHADER_READ_ONLY_OPTIMAL).
+// Returns true when the transition was recorded and the bookkeeping was updated
+// (currentAccessTypes = resting, transferAccess = NONE so no lazy barrier is inserted
+// for the same transfer again); false when the texture has no resting layout
+// (pure-transfer usage) or is a swapchain image (vkImage is not owned here).
+static bool bufferTextureToRestingLayout(CCVKGPUTexture *gpuTexture,
+                                         ThsvsAccessType prevAccess, const CCVKGPUCommandBuffer *gpuCommandBuffer) {
+    VkImage image = VK_NULL_HANDLE;
+    ThsvsAccessType restingAccess = getInitialAccessType(gpuTexture);
+    if (gpuTexture->swapchain) {
+        // A mid-frame readback runs while the image is still in PRESENT_SRC_KHR: the frame's
+        // acquire barrier (PRESENT→COLOR_ATTACHMENT) is recorded but not yet executed. The
+        // round trip must therefore stay PRESENT→TRANSFER_READ→PRESENT so the validator's
+        // image-layout chain remains connected; returning to COLOR_ATTACHMENT would break
+        // the subsequent acquire barrier (VUID-vkCmdDraw-None-09600).
+        image = gpuTexture->swapchainVkImages[gpuTexture->swapchain->curImageIndex];
+        restingAccess = THSVS_ACCESS_PRESENT;
+    } else {
+        image = gpuTexture->vkImage;
+    }
+    if (image == VK_NULL_HANDLE || restingAccess == THSVS_ACCESS_NONE) return false;
+
+    ThsvsImageBarrier barrier{};
+    barrier.image = image;
+    barrier.discardContents = false;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+    barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+    barrier.subresourceRange.aspectMask = gpuTexture->aspectMask;
+    barrier.prevAccessCount = 1;
+    barrier.pPrevAccesses = &prevAccess;
+    barrier.nextAccessCount = 1;
+    barrier.pNextAccesses = &restingAccess;
+
+    VkPipelineStageFlags srcStages = 0;
+    VkPipelineStageFlags dstStages = 0;
+    VkImageMemoryBarrier vkBarrier{};
+    thsvsGetVulkanImageMemoryBarrier(barrier, &srcStages, &dstStages, &vkBarrier);
+    vkCmdPipelineBarrier(gpuCommandBuffer->vkCommandBuffer, srcStages, dstStages,
+                         0, 0, nullptr, 0, nullptr, 1, &vkBarrier);
+
+    gpuTexture->currentAccessTypes.assign(1, restingAccess);
+    gpuTexture->transferAccess = THSVS_ACCESS_NONE;
+    return true;
+}
+
 void cmdFuncCCVKCreateTexture(CCVKDevice *device, CCVKGPUTexture *gpuTexture) {
     if (!gpuTexture->size) return;
 
@@ -192,6 +267,41 @@ void cmdFuncCCVKCreateTexture(CCVKDevice *device, CCVKGPUTexture *gpuTexture) {
         gpuTexture->vkImage = gpuTexture->externalVKImage;
     } else {
         createFn(&gpuTexture->vkImage, &gpuTexture->vmaAllocation);
+    }
+
+    // Regular (owned) textures: immediately take the freshly created image (initial layout
+    // is UNDEFINED) to its first-use layout. A plain image may be transitioned right after
+    // creation (no acquire requirement — that's swapchain-specific), so the engine never
+    // has to sample a tracked-UNDEFINED image (VUID-vkCmdDraw-None-09600). The target
+    // layout matches what the engine declares: offscreen LOAD passes expect
+    // SHADER_READ_ONLY, descriptor bindings expect SHADER_READ_ONLY/GENERAL, and
+    // CLEAR/DISCARD passes start from UNDEFINED which discards regardless.
+    if (!gpuTexture->swapchain && !hasFlag(gpuTexture->flags, TextureFlagBit::EXTERNAL_OES) &&
+        !hasFlag(gpuTexture->flags, TextureFlagBit::EXTERNAL_NORMAL) && gpuTexture->vkImage) {
+        ThsvsAccessType initialAccess = getInitialAccessType(gpuTexture);
+        if (initialAccess != THSVS_ACCESS_NONE) {
+            ThsvsImageBarrier tempBarrier{};
+            tempBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            tempBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            tempBarrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
+            tempBarrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
+            tempBarrier.subresourceRange.aspectMask = gpuTexture->aspectMask;
+            tempBarrier.nextAccessCount = 1;
+            tempBarrier.pNextAccesses = &initialAccess;
+            tempBarrier.image = gpuTexture->vkImage;
+
+            VkPipelineStageFlags srcStages = 0;
+            VkPipelineStageFlags dstStages = 0;
+            VkImageMemoryBarrier barrier{};
+            thsvsGetVulkanImageMemoryBarrier(tempBarrier, &srcStages, &dstStages, &barrier);
+            device->gpuTransportHub()->checkIn(
+                [=](const CCVKGPUCommandBuffer *gpuCommandBuffer) {
+                    vkCmdPipelineBarrier(gpuCommandBuffer->vkCommandBuffer, srcStages, dstStages,
+                                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+                },
+                true); // immediate submit, right after creation
+            gpuTexture->currentAccessTypes.assign(1, initialAccess);
+        }
     }
 }
 
@@ -1486,8 +1596,14 @@ void cmdFuncCCVKCopyBuffersToTexture(CCVKDevice *device, const uint8_t *const *b
         }
     }
 
-    curTypes.assign({THSVS_ACCESS_TRANSFER_WRITE});
-    gpuTexture->transferAccess = THSVS_ACCESS_TRANSFER_WRITE;
+    // Never end a submission with the image left in TRANSFER_DST: return it to the resting
+    // layout right away so descriptor writes / draws of the next frame see the persistent
+    // layout (VUID-vkCmdDraw-None-09600 expects TRANSFER_DST_OPTIMAL instead of
+    // SHADER_READ_ONLY_OPTIMAL when the image was only lazily transitioned back).
+    if (!bufferTextureToRestingLayout(gpuTexture, THSVS_ACCESS_TRANSFER_WRITE, gpuCommandBuffer)) {
+        curTypes.assign({THSVS_ACCESS_TRANSFER_WRITE});
+        gpuTexture->transferAccess = THSVS_ACCESS_TRANSFER_WRITE;
+    }
     device->gpuBarrierManager()->checkIn(gpuTexture);
 }
 
@@ -1495,16 +1611,28 @@ void cmdFuncCCVKCopyTextureToBuffers(CCVKDevice *device, CCVKGPUTexture *srcText
                                      const BufferTextureCopy *regions, uint32_t count, const CCVKGPUCommandBuffer *gpuCommandBuffer) {
     ccstd::vector<ThsvsAccessType> &curTypes = srcTexture->currentAccessTypes;
 
+    // a swapchain texture owns its images in swapchainVkImages (vkImage is null)
+    const VkImage srcImage = srcTexture->swapchain
+                                 ? srcTexture->swapchainVkImages[srcTexture->swapchain->curImageIndex]
+                                 : srcTexture->vkImage;
+
     ThsvsImageBarrier barrier{};
-    barrier.image = srcTexture->vkImage;
+    barrier.image = srcImage;
     barrier.discardContents = false;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
     barrier.subresourceRange.layerCount = VK_REMAINING_ARRAY_LAYERS;
     barrier.subresourceRange.aspectMask = srcTexture->aspectMask;
-    barrier.prevAccessCount = utils::toUint(curTypes.size());
-    barrier.pPrevAccesses = curTypes.data();
+    // Swapchain images: the engine's currentAccessTypes is a record-time model (updated
+    // when the frame's acquire barrier was recorded, i.e. COLOR_ATTACHMENT), but at the
+    // time the out-of-band readback executes the image is still in its execution-time
+    // state: PRESENT (the acquire barrier has not run yet). Use the execution-time state
+    // for the entry barrier, otherwise its oldLayout mismatches the validator's tracked
+    // layout and the frame's subsequent draws report VUID-vkCmdDraw-None-09600.
+    static const ThsvsAccessType SWAPCHAIN_ENTRY_PRESENT = THSVS_ACCESS_PRESENT;
+    barrier.prevAccessCount = srcTexture->swapchain ? 1U : utils::toUint(curTypes.size());
+    barrier.pPrevAccesses = srcTexture->swapchain ? &SWAPCHAIN_ENTRY_PRESENT : curTypes.data();
     barrier.nextAccessCount = 1;
     barrier.pNextAccesses = getAccessType(AccessFlagBit::TRANSFER_READ);
 
@@ -1530,11 +1658,16 @@ void cmdFuncCCVKCopyTextureToBuffers(CCVKDevice *device, CCVKGPUTexture *srcText
 
         offset += regionSize;
     }
-    vkCmdCopyImageToBuffer(gpuCommandBuffer->vkCommandBuffer, srcTexture->vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+    vkCmdCopyImageToBuffer(gpuCommandBuffer->vkCommandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                            destBuffer->gpuBuffer->vkBuffer, utils::toUint(stagingRegions.size()), stagingRegions.data());
 
-    curTypes.assign({THSVS_ACCESS_TRANSFER_READ});
-    srcTexture->transferAccess = THSVS_ACCESS_TRANSFER_READ;
+    // Mirror of the upload tail: after the readback the image must not remain in
+    // TRANSFER_SRC for the rest of the frame/submission (descriptor-write-time layout
+    // tracking; VUID-vkCmdDraw-None-09600).
+    if (!bufferTextureToRestingLayout(srcTexture, THSVS_ACCESS_TRANSFER_READ, gpuCommandBuffer)) {
+        curTypes.assign({THSVS_ACCESS_TRANSFER_READ});
+        srcTexture->transferAccess = THSVS_ACCESS_TRANSFER_READ;
+    }
     device->gpuBarrierManager()->checkIn(srcTexture);
 }
 

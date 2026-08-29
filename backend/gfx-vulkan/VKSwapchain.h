@@ -60,6 +60,7 @@ public:
     // The feature is Win32 only: on other platforms these methods are no-ops.
     void acquireFullScreenExclusiveMode() override;
     void releaseFullScreenExclusiveMode() override;
+    void setVSyncMode(VsyncMode mode) override;
 
 protected:
     void doInit(const SwapchainInfo &info) override;
@@ -77,6 +78,9 @@ protected:
     void setupFullScreenExclusiveInfo();
     void attemptFullScreenExclusiveAcquire();
     void releaseFullScreenExclusiveModeInternal();
+
+    // setVSyncMode() changed the mode: the next checkSwapchainStatus rebuilds even if the extent is unchanged
+    bool _vsyncModeChanged{false};
 
     IntrusivePtr<CCVKGPUSwapchain> _gpuSwapchain;
 };

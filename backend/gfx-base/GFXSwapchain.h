@@ -61,6 +61,8 @@ public:
     inline uint32_t getWindowId() const { return _windowId; }
     inline void *getWindowHandle() const { return _windowHandle; }
     inline VsyncMode getVSyncMode() const { return _vsyncMode; }
+    // runtime vsync switch; backends apply the new mode at the next swapchain (re)creation
+    virtual void setVSyncMode(VsyncMode mode) { _vsyncMode = mode; }
 
     inline Texture *getColorTexture() const { return _colorTexture; }
     inline Texture *getDepthStencilTexture() const { return _depthStencilTexture; }

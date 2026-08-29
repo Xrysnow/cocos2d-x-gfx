@@ -333,6 +333,10 @@ struct CCVKGPUQueue {
     ccstd::vector<uint32_t> possibleQueueFamilyIndices;
     ccstd::vector<VkSemaphore> lastSignaledSemaphores;
     ccstd::vector<VkSemaphore> currentPresentSemaphores; // render-finished sems of the frames being acquired
+    // true between acquire() (with images acquired) and the frame's submit(): the acquire
+    // semaphores in lastSignaledSemaphores are still pending and must be waited by any
+    // out-of-band submit that touches the acquired images (e.g. readback copies)
+    bool frameAcquirePending = false;
     ccstd::vector<VkPipelineStageFlags> submitStageMasks;
     ccstd::vector<VkCommandBuffer> commandBuffers;
 };
@@ -477,7 +481,7 @@ public:
     VkFormat depthStencilFormat{VK_FORMAT_UNDEFINED};
 
     uint32_t curBackBufferIndex{0U};
-    uint32_t backBufferCount{3U};
+    uint32_t backBufferCount{2U};
 
     // monotonic frame counter, incremented per present(): a retired swapchain is
     // destroyed only after backBufferCount presents (recreation frame's fence waited)
@@ -1371,6 +1375,9 @@ public:
         _lateCmdBuff.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         _lateCmdBuff.queueFamilyIndex = _queue->queueFamilyIndex;
 
+        _immCmdBuff.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        _immCmdBuff.queueFamilyIndex = _queue->queueFamilyIndex;
+
         VkFenceCreateInfo createInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         VK_CHECK(vkCreateFence(_device->vkDevice, &createInfo, nullptr, &_fence));
     }
@@ -1389,24 +1396,44 @@ public:
     }
 
     template <typename TFunc>
-    void checkIn(const TFunc &record, bool immediateSubmission = false, bool late = false) {
+    void checkIn(const TFunc &record, bool immediateSubmission = false, bool late = false,
+                 const ccstd::vector<VkSemaphore> *waitSemaphores = nullptr) {
         CCVKGPUCommandBufferPool *commandBufferPool = _device->getCommandBufferPool();
-        CCVKGPUCommandBuffer *cmdBuff = late ? &_lateCmdBuff : &_earlyCmdBuff;
 
-        if (!cmdBuff->vkCommandBuffer) {
+        if (immediateSubmission) {
+            // Immediate (out-of-band) work must NEVER be recorded into the frame's
+            // early/late buffers: those may already carry swapchain transitions recorded
+            // in acquire() whose acquire semaphores are only waited by the frame submit.
+            // Flushing them here (the shared-buffer behavior) submits that transition
+            // without its semaphore wait (UNASSIGNED-non-acquired-swapchain-image-used).
+            // A dedicated buffer keeps frame records intact.
+            CCVKGPUCommandBuffer *cmdBuff = &_immCmdBuff;
             commandBufferPool->request(cmdBuff);
             VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
             beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
             VK_CHECK(vkBeginCommandBuffer(cmdBuff->vkCommandBuffer, &beginInfo));
-        }
 
-        record(cmdBuff);
+            record(cmdBuff);
 
-        if (immediateSubmission) {
             VK_CHECK(vkEndCommandBuffer(cmdBuff->vkCommandBuffer));
             VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
             submitInfo.commandBufferCount = 1;
             submitInfo.pCommandBuffers = &cmdBuff->vkCommandBuffer;
+            if (waitSemaphores && !waitSemaphores->empty()) {
+                // e.g. a presentable image acquired with a semaphore: the immediate submit
+                // must wait it before touching the image (UNASSIGNED-non-acquired-...)
+                submitInfo.waitSemaphoreCount = utils::toUint(waitSemaphores->size());
+                submitInfo.pWaitSemaphores = waitSemaphores->data();
+                // The wait mask is a stage-1 (32-bit) array; keep a padded second element
+                // with the same value so a validator reading each element at 64-bit
+                // granularity (stage-2 flags) cannot overread a single-element allocation
+                // and report the neighbor bytes as extra stage bits
+                // (VUIDs -parameter/00066/04090..04096/00078). Spec-conformant readers
+                // ignore elements beyond waitSemaphoreCount.
+                VkPipelineStageFlags stageMasks[2] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                                      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+                submitInfo.pWaitDstStageMask = stageMasks;
+            }
             //VK_CHECK_LOG(vkQueueSubmit(_queue->vkQueue, 1, &submitInfo, _fence));
             //VK_CHECK_LOG(vkWaitForFences(_device->vkDevice, 1, &_fence, VK_TRUE, DEFAULT_TIMEOUT));
             do {
@@ -1422,8 +1449,19 @@ public:
             } while (0);
             vkResetFences(_device->vkDevice, 1, &_fence);
             commandBufferPool->yield(cmdBuff);
-            cmdBuff->vkCommandBuffer = VK_NULL_HANDLE;
+            return;
         }
+
+        CCVKGPUCommandBuffer *cmdBuff = late ? &_lateCmdBuff : &_earlyCmdBuff;
+
+        if (!cmdBuff->vkCommandBuffer) {
+            commandBufferPool->request(cmdBuff);
+            VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            VK_CHECK(vkBeginCommandBuffer(cmdBuff->vkCommandBuffer, &beginInfo));
+        }
+
+        record(cmdBuff);
     }
 
     VkCommandBuffer packageForFlight(bool late) {
@@ -1437,12 +1475,25 @@ public:
         return vkCommandBuffer;
     }
 
+    // drop recorded-but-never-submitted work: records surviving until the next frame's
+    // acquire() belong to a frame that never reached submit() and may reference images
+    // whose acquire semaphores the upcoming submit will not wait on
+    void discard(bool late) {
+        CCVKGPUCommandBuffer *cmdBuff = late ? &_lateCmdBuff : &_earlyCmdBuff;
+        if (cmdBuff->vkCommandBuffer) {
+            VK_CHECK(vkEndCommandBuffer(cmdBuff->vkCommandBuffer));
+            _device->getCommandBufferPool()->yield(cmdBuff);
+            cmdBuff->vkCommandBuffer = VK_NULL_HANDLE;
+        }
+    }
+
 private:
     CCVKGPUDevice *_device = nullptr;
 
     CCVKGPUQueue *_queue = nullptr;
     CCVKGPUCommandBuffer _earlyCmdBuff;
     CCVKGPUCommandBuffer _lateCmdBuff;
+    CCVKGPUCommandBuffer _immCmdBuff; // dedicated buffer for immediate (out-of-band) submits
     VkFence _fence = VK_NULL_HANDLE;
 };
 

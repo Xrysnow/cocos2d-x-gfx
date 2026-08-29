@@ -130,6 +130,19 @@ void SwapchainAgent::releaseFullScreenExclusiveMode() {
     mq->kickAndWait();
 }
 
+void SwapchainAgent::setVSyncMode(VsyncMode mode) {
+    auto *mq = DeviceAgent::getInstance()->getMessageQueue();
+    // synchronous: the mode must be set on the actor before a following resize() rebuild
+    ENQUEUE_MESSAGE_2(
+        mq, SwapchainSetVSyncMode,
+        actor, getActor(),
+        mode, mode,
+        {
+            actor->setVSyncMode(mode);
+        });
+    mq->kickAndWait();
+}
+
 uint32_t SwapchainAgent::getGeneration() const {
     return _actor->getGeneration();
 }

@@ -37,6 +37,50 @@
     #include "swappy/swappy_common.h"
 #endif
 
+using cc::gfx::VsyncMode;
+
+namespace {
+// human-readable name for a VkPresentModeKHR
+const char *presentModeName(VkPresentModeKHR mode) {
+    switch (mode) {
+        case VK_PRESENT_MODE_IMMEDIATE_KHR: return "IMMEDIATE";
+        case VK_PRESENT_MODE_MAILBOX_KHR: return "MAILBOX";
+        case VK_PRESENT_MODE_FIFO_KHR: return "FIFO";
+        case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO_RELAXED";
+        case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR: return "SHARED_DEMAND_REFRESH";
+        case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR: return "SHARED_CONTINUOUS_REFRESH";
+        default: return "UNKNOWN";
+    }
+}
+
+// best present mode for vsyncMode from the surface-supported set; shared by doInit and
+// every (re)creation so runtime setVSyncMode() toggles take effect
+VkPresentModeKHR selectPresentModeForVsync(VsyncMode vsyncMode, const ccstd::vector<VkPresentModeKHR> &supportedModes) {
+    ccstd::vector<VkPresentModeKHR> priorityList;
+    switch (vsyncMode) {
+        case VsyncMode::OFF: priorityList = {VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_FIFO_KHR}; break;
+        case VsyncMode::ON: priorityList = {VK_PRESENT_MODE_FIFO_KHR}; break;
+        case VsyncMode::RELAXED: priorityList = {VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_FIFO_KHR}; break;
+        case VsyncMode::MAILBOX: priorityList = {VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_FIFO_KHR}; break;
+        case VsyncMode::HALF: priorityList = {VK_PRESENT_MODE_FIFO_KHR}; break; // no easy fallback
+    }
+
+    VkPresentModeKHR best = VK_PRESENT_MODE_FIFO_KHR;
+
+    // UNASSIGNED-BestPractices-vkCreateSwapchainKHR-swapchain-presentmode-not-fifo
+#if !defined(VK_USE_PLATFORM_ANDROID_KHR)
+    for (VkPresentModeKHR presentMode : priorityList) {
+        if (std::find(supportedModes.begin(), supportedModes.end(), presentMode) != supportedModes.end()) {
+            best = presentMode;
+            break;
+        }
+    }
+#endif
+
+    return best;
+}
+} // namespace
+
 namespace cc {
 namespace gfx {
 
@@ -154,57 +198,8 @@ void CCVKSwapchain::doInit(const SwapchainInfo &info) {
         }
 
         // Select a present mode for the swapchain
-
-        ccstd::vector<VkPresentModeKHR> presentModePriorityList;
-
-        switch (_vsyncMode) {
-            case VsyncMode::OFF: presentModePriorityList.insert(presentModePriorityList.end(), {VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_FIFO_KHR}); break;
-            case VsyncMode::ON: presentModePriorityList.insert(presentModePriorityList.end(), {VK_PRESENT_MODE_FIFO_KHR}); break;
-            case VsyncMode::RELAXED: presentModePriorityList.insert(presentModePriorityList.end(), {VK_PRESENT_MODE_FIFO_RELAXED_KHR, VK_PRESENT_MODE_FIFO_KHR}); break;
-            case VsyncMode::MAILBOX: presentModePriorityList.insert(presentModePriorityList.end(), {VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_FIFO_KHR}); break;
-            case VsyncMode::HALF: presentModePriorityList.insert(presentModePriorityList.end(), {VK_PRESENT_MODE_FIFO_KHR}); break; // no easy fallback
-        }
-
-        VkPresentModeKHR swapchainPresentMode = VK_PRESENT_MODE_FIFO_KHR;
-
-        // UNASSIGNED-BestPractices-vkCreateSwapchainKHR-swapchain-presentmode-not-fifo
-#if !defined(VK_USE_PLATFORM_ANDROID_KHR)
-        for (VkPresentModeKHR presentMode : presentModePriorityList) {
-            if (std::find(presentModes.begin(), presentModes.end(), presentMode) != presentModes.end()) {
-                swapchainPresentMode = presentMode;
-                break;
-            }
-        }
-#endif
-
-        #if 1
-        auto msgPresentMode = "?";
-        switch (swapchainPresentMode)
-        {
-        case VK_PRESENT_MODE_IMMEDIATE_KHR:
-            msgPresentMode = "IMMEDIATE";
-            break;
-        case VK_PRESENT_MODE_MAILBOX_KHR:
-            msgPresentMode = "MAILBOX";
-            break;
-        case VK_PRESENT_MODE_FIFO_KHR:
-            msgPresentMode = "FIFO";
-            break;
-        case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
-            msgPresentMode = "FIFO_RELAXED";
-            break;
-        case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR:
-            msgPresentMode = "SHARED_DEMAND_REFRESH";
-            break;
-        case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR:
-            msgPresentMode = "SHARED_CONTINUOUS_REFRESH";
-            break;
-        case VK_PRESENT_MODE_MAX_ENUM_KHR:
-            break;
-        default: ;
-        }
-        CC_LOG_INFO("Swapchain present mode is %s", msgPresentMode);
-        #endif
+        VkPresentModeKHR swapchainPresentMode = selectPresentModeForVsync(_vsyncMode, presentModes);
+        CC_LOG_INFO("Swapchain present mode is %s", presentModeName(swapchainPresentMode));
 
         // Determine the number of images
         uint32_t desiredNumberOfSwapchainImages = std::max(gpuDevice->backBufferCount, surfaceCapabilities.minImageCount);
@@ -328,16 +323,28 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
     uint32_t newHeight = height ? height : surfaceCapabilities.currentExtent.height;
 
     if (_gpuSwapchain->createInfo.imageExtent.width == newWidth &&
-        _gpuSwapchain->createInfo.imageExtent.height == newHeight && _gpuSwapchain->lastPresentResult == VK_SUCCESS) {
+        _gpuSwapchain->createInfo.imageExtent.height == newHeight && _gpuSwapchain->lastPresentResult == VK_SUCCESS
+        && !_vsyncModeChanged) {
         return true;
     }
 
-    CC_LOG_DEBUG("Resize swapchain: %dx%d -> %dx%d, rotation: %d",
+    const auto oldPresentMode = _gpuSwapchain->createInfo.presentMode;
+
+    // re-derive the present mode from _vsyncMode at every (re)creation (runtime setVSyncMode support)
+    uint32_t presentModeCount = 0U;
+    VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(gpuContext->physicalDevice, _gpuSwapchain->vkSurface, &presentModeCount, nullptr));
+    ccstd::vector<VkPresentModeKHR> presentModes(presentModeCount);
+    VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(gpuContext->physicalDevice, _gpuSwapchain->vkSurface, &presentModeCount, presentModes.data()));
+    _gpuSwapchain->createInfo.presentMode = selectPresentModeForVsync(_vsyncMode, presentModes);
+
+    CC_LOG_INFO("Recreate swapchain: %dx%d -> %dx%d, present: %s -> %s, vsync: %d",
         _gpuSwapchain->createInfo.imageExtent.width,
         _gpuSwapchain->createInfo.imageExtent.height,
         newWidth,
         newHeight,
-        (uint32_t)_transform * 90);
+        presentModeName(oldPresentMode),
+        presentModeName(_gpuSwapchain->createInfo.presentMode),
+        static_cast<uint32_t>(_vsyncMode));
 
     if (newWidth == static_cast<uint32_t>(-1)) {
         _gpuSwapchain->createInfo.imageExtent.width = _colorTexture->getWidth();
@@ -368,6 +375,7 @@ bool CCVKSwapchain::checkSwapchainStatus(uint32_t width, uint32_t height) {
         _gpuSwapchain->lastPresentResult = VK_NOT_READY;
         return false;
     }
+    _vsyncModeChanged = false;
 
     destroySwapchain(gpuDevice, true); // deferred: old chain retired until its fence is waited
 
@@ -728,6 +736,12 @@ void CCVKSwapchain::releaseFullScreenExclusiveMode() {
     _gpuSwapchain->fullScreenExclusiveRequested = false;
     releaseFullScreenExclusiveModeInternal();
 #endif
+}
+
+void CCVKSwapchain::setVSyncMode(VsyncMode mode) {
+    if (_vsyncMode == mode) return;
+    _vsyncMode = mode;
+    _vsyncModeChanged = true;
 }
 
 void CCVKSwapchain::releaseFullScreenExclusiveModeInternal() {

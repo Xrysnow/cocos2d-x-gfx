@@ -770,6 +770,18 @@ void CCVKCommandBuffer::bindDescriptorSets(VkPipelineBindPoint bindPoint) {
         if (_curGPUDescriptorSets[i]) {
             const CCVKGPUDescriptorSet::Instance &instance = _curGPUDescriptorSets[i]->instances[gpuDevice->curBackBufferIndex];
             _curVkDescriptorSets[i] = instance.vkDescriptorSet;
+
+            // (re)register the textures of every set actually being bound so the barrier
+            // manager sees them in the same submit as the following draws — independent of
+            // the descriptor-set update()/dirty timing (VUID-vkCmdDraw-None-09600)
+            CCVKGPUBarrierManager *barrierManager = device->gpuBarrierManager();
+            for (const CCVKGPUDescriptor &binding : _curGPUDescriptorSets[i]->gpuDescriptors) {
+                if (binding.gpuTextureView) {
+                    barrierManager->checkIn(binding.gpuTextureView->gpuTexture,
+                                            binding.accessTypes.data(),
+                                            utils::toUint(binding.accessTypes.size()));
+                }
+            }
         } else {
             _curVkDescriptorSets[i] = pipelineLayout->setLayouts[i]->defaultDescriptorSet;
         }

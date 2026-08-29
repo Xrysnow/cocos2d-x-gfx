@@ -137,5 +137,11 @@ void SwapchainValidator::releaseFullScreenExclusiveMode() {
     _actor->releaseFullScreenExclusiveMode();
 }
 
+void SwapchainValidator::setVSyncMode(VsyncMode mode) {
+    CC_ASSERT(isInited());
+
+    _actor->setVSyncMode(mode);
+}
+
 } // namespace gfx
 } // namespace cc
