@@ -967,6 +967,35 @@ void CCVKDevice::copyBuffersToTexture(const uint8_t *const *buffers, Texture *ds
     });
 }
 
+// The swapchain is acquired/presented in BGRA order (see CCVKSwapchain::doInit ->
+// VK_FORMAT_B8G8R8A8_UNORM), but every readback consumer in the engine expects RGBA8 bytes:
+// PixelBufferDescriptor carries no format (renderer/backend/PixelBufferDescriptor.h) and
+// Image::initWithRawData hardcodes RGBA8 (platform/CCImage.cpp) before saveImageToPNG writes
+// each pixel's first three bytes as R, G, B. Without this swap a captured PNG has red and blue
+// exchanged. The legacy Metal backend normalizes MTLPixelFormatBGRA8Unorm the same way in
+// UtilsMTL::swizzleImage().
+static void swizzleBGRA8ToRGBA8(uint8_t *data, uint32_t sizeInBytes) {
+    // One 32-bit texel per iteration for the buffers the engine actually passes (a vector or
+    // operator new buffer, hence 4-byte aligned); the byte-wise loop covers any other caller.
+    // A BGRA8 region is always a multiple of 4 bytes, so the fast path covers it entirely.
+    // The 32-bit masks below are little-endian specific (B|G<<8|R<<16|A<<24); a big-endian
+    // host falls back to the byte-wise loop, which is byte-order agnostic.
+    if (!CC_HOST_IS_BIG_ENDIAN && (reinterpret_cast<uintptr_t>(data) & (sizeof(uint32_t) - 1U)) == 0U) {
+        uint32_t *texels = reinterpret_cast<uint32_t *>(data);
+        const uint32_t texelCount = sizeInBytes / 4U;
+        for (uint32_t i = 0U; i < texelCount; ++i) {
+            const uint32_t texel = texels[i];
+            texels[i] = (texel & 0xFF00FF00U) | ((texel & 0x00FF0000U) >> 16U) | ((texel & 0x000000FFU) << 16U);
+        }
+    } else {
+        for (uint32_t offset = 0U; offset + 3U < sizeInBytes; offset += 4U) {
+            const uint8_t b = data[offset];
+            data[offset] = data[offset + 2U];
+            data[offset + 2U] = b;
+        }
+    }
+}
+
 void CCVKDevice::copyTextureToBuffers(Texture *srcTexture, uint8_t *const *buffers, const BufferTextureCopy *regions, uint32_t count) {
     CC_PROFILE(CCVKDeviceCopyTextureToBuffers);
     uint32_t totalSize = 0U;
@@ -1027,11 +1056,18 @@ void CCVKDevice::copyTextureToBuffers(Texture *srcTexture, uint8_t *const *buffe
         queue->gpuQueue()->lastSignaledSemaphores.clear();
     }
 
+    // Give the bytes back in the channel order the engine's readback consumers expect:
+    // BGRA8 sources (i.e. the swapchain color texture) are handed over as RGBA8.
+    const bool needsSwizzle = format == Format::BGRA8;
+
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t regionOffset = 0;
         uint32_t regionSize = 0;
         std::tie(regionOffset, regionSize) = regionOffsetSizes[i];
         memcpy(buffers[i], stagingBuffer->mappedData() + regionOffset, regionSize);
+        if (needsSwizzle) {
+            swizzleBGRA8ToRGBA8(buffers[i], regionSize);
+        }
     }
 }
 

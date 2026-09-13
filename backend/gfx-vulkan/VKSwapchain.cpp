@@ -200,6 +200,9 @@ void CCVKSwapchain::doInit(const SwapchainInfo &info) {
         // Select a present mode for the swapchain
         VkPresentModeKHR swapchainPresentMode = selectPresentModeForVsync(_vsyncMode, presentModes);
         CC_LOG_INFO("Swapchain present mode is %s", presentModeName(swapchainPresentMode));
+        // The GFX-side format decides whether readbacks need a channel swizzle
+        // (CCVKDevice::copyTextureToBuffers), so make it visible in the log.
+        CC_LOG_INFO("Swapchain color format is %s", GFX_FORMAT_INFOS[toNumber(colorFmt)].name.c_str());
 
         // Determine the number of images
         uint32_t desiredNumberOfSwapchainImages = std::max(gpuDevice->backBufferCount, surfaceCapabilities.minImageCount);
