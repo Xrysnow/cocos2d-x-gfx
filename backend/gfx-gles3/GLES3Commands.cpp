@@ -879,10 +879,14 @@ static bool useRenderBuffer(const GLES3Device *device, Format format, TextureUsa
         hasAllFlags(TextureUsage::COLOR_ATTACHMENT | TextureUsage::DEPTH_STENCIL_ATTACHMENT, usage);
 }
 
-void cmdFuncGLES3CreateTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture) {
+void cmdFuncGLES3SetupTextureFormat(GLES3GPUTexture *gpuTexture) {
     gpuTexture->glInternalFmt = mapGLInternalFormat(gpuTexture->format);
     gpuTexture->glFormat = mapGLFormat(gpuTexture->format);
     gpuTexture->glType = formatToGLType(gpuTexture->format);
+}
+
+void cmdFuncGLES3CreateTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture) {
+    cmdFuncGLES3SetupTextureFormat(gpuTexture);
 
     bool supportRenderBufferMS = device->constantRegistry()->mMSRT > MSRTSupportLevel::NONE;
     gpuTexture->useRenderBuffer = useRenderBuffer(device, gpuTexture->format, gpuTexture->usage) &&
@@ -3086,19 +3090,66 @@ void cmdFuncGLES3CopyBuffersToTexture(GLES3Device *device, const uint8_t *const 
 }
 
 void cmdFuncGLES3CopyTextureToBuffers(GLES3Device *device, GLES3GPUTextureView *gpuTextureView, uint8_t *const *buffers, const BufferTextureCopy *regions, uint32_t count) {
-    const auto *gpuTexture = gpuTextureView->gpuTexture;
-    auto glFormat = gpuTexture->glFormat;
-    auto glType = gpuTexture->glType;
+    auto *gpuTexture = gpuTextureView->gpuTexture;
+    // Textures that never went through cmdFuncGLES3CreateTexture (swapchain color/depth textures
+    // own no GL texture object) may carry the struct defaults here; glReadPixels with format 0 /
+    // type 0 is GL_INVALID_ENUM and would leave the destination untouched (an all-black capture),
+    // so re-derive the pair instead of trusting the cached fields.
+    if (gpuTexture->glFormat == 0 || gpuTexture->glType == 0) {
+        cmdFuncGLES3SetupTextureFormat(gpuTexture);
+    }
+    const GLenum glFormat = gpuTexture->glFormat;
+    const GLenum glType = gpuTexture->glType;
 
     for (uint32_t i = 0; i < count; ++i) {
-        auto region = regions[i];
+        const BufferTextureCopy &region = regions[i];
         uint8_t *copyDst = buffers[i];
+        const uint32_t width = region.texExtent.width;
+        const uint32_t height = region.texExtent.height;
+        if (!width || !height) continue;
+
+        // The caller's destination buffer is assumed tightly packed (region.buffStride is 0 in
+        // every current caller); a padded pitch would need a row-by-row landing buffer.
+        if (region.buffStride) {
+            CC_LOG_ERROR("%s: non-zero BufferTextureCopy::buffStride (%u) is not supported, destination stays untouched",
+                         __FUNCTION__, region.buffStride);
+            continue;
+        }
+
         auto framebuffer = device->framebufferCacheMap()->getFramebufferFromTexture(gpuTextureView, region.texSubres);
         if (device->stateCache()->glReadFramebuffer != framebuffer) {
             GL_CHECK(glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer));
             device->stateCache()->glReadFramebuffer = framebuffer;
         }
-        GL_CHECK(glReadPixels(region.texOffset.x, region.texOffset.y, region.texExtent.width, region.texExtent.height, glFormat, glType, copyDst));
+
+        // glReadPixels writes rows bottom-up (GL's origin is the lower-left corner) while
+        // engine-side images are top-down (Image::saveToFile emits row 0 as the first PNG row),
+        // so the rows must be reversed while landing into copyDst — the same row flip the legacy
+        // OpenGL backend performs in CommandBufferGL::readPixels.
+        const size_t rowBytes = static_cast<size_t>(width) * GFX_FORMAT_INFOS[static_cast<uint32_t>(gpuTexture->format)].size;
+        const size_t bufferSize = rowBytes * static_cast<size_t>(height);
+
+        ccstd::vector<uint8_t> flipped(bufferSize);
+        // Drain any pending error of unrelated origin so that the check below reports this
+        // glReadPixels only; the destination is left untouched on failure, which callers would
+        // otherwise see as a valid but all-black capture.
+        while (glGetError() != GL_NO_ERROR) {}
+        glReadPixels(region.texOffset.x, region.texOffset.y, static_cast<GLsizei>(width), static_cast<GLsizei>(height),
+                     glFormat, glType, flipped.data());
+        // GL_CHECK only reports in debug builds, so the error is logged unconditionally here.
+        const GLenum err = glGetError();
+        if (err != GL_NO_ERROR) {
+            CC_LOG_ERROR("%s: glReadPixels(x=%d, y=%d, w=%u, h=%u, format=0x%x, type=0x%x, fbo=%u) failed: GL error 0x%x",
+                         __FUNCTION__, region.texOffset.x, region.texOffset.y, width, height,
+                         glFormat, glType, framebuffer, err);
+            continue;
+        }
+
+        for (uint32_t row = 0; row < height; ++row) {
+            memcpy(copyDst + static_cast<size_t>(row) * rowBytes,
+                   flipped.data() + static_cast<size_t>(height - 1 - row) * rowBytes,
+                   rowBytes);
+        }
     }
 }
 

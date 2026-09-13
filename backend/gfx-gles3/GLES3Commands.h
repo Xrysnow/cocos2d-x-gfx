@@ -244,6 +244,11 @@ void cmdFuncGLES3CreateBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer);
 void cmdFuncGLES3DestroyBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer);
 void cmdFuncGLES3ResizeBuffer(GLES3Device *device, GLES3GPUBuffer *gpuBuffer);
 void cmdFuncGLES3CreateTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture);
+// Fills the readback format/type (GL format + GL type) for textures that never went through
+// cmdFuncGLES3CreateTexture — swapchain color/depth textures own no GL texture object, so their
+// glFormat/glType stay 0 and cmdFuncGLES3CopyTextureToBuffers would call glReadPixels with an
+// invalid format (GL_INVALID_ENUM), silently producing an all-zero (black) image.
+void cmdFuncGLES3SetupTextureFormat(GLES3GPUTexture *gpuTexture);
 void cmdFuncGLES3DestroyTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture);
 void cmdFuncGLES3ResizeTexture(GLES3Device *device, GLES3GPUTexture *gpuTexture);
 void cmdFuncGLES3CreateTextureView(GLES3Device *device, GLES3GPUTextureView *gpuTextureView);

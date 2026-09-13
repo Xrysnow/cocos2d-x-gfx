@@ -175,6 +175,12 @@ void GLES3Texture::doInit(const SwapchainTextureInfo & /*info*/) {
     _gpuTexture->size = _size;
     _gpuTexture->memoryAllocated = false;
     _gpuTexture->swapchain = static_cast<GLES3Swapchain *>(_swapchain)->gpuSwapchain();
+    // A swapchain texture owns no GL texture object (the default framebuffer is FBO 0), so it
+    // never goes through cmdFuncGLES3CreateTexture. Its readback format/type must still be set:
+    // cmdFuncGLES3CopyTextureToBuffers feeds glFormat/glType straight to glReadPixels, and the
+    // struct defaults (0/0) are not valid GL enums — glReadPixels would fail with
+    // GL_INVALID_ENUM and leave the destination buffer untouched (an all-black screenshot).
+    cmdFuncGLES3SetupTextureFormat(_gpuTexture);
     _gpuTextureView = ccnew GLES3GPUTextureView;
     createTextureView();
 }
