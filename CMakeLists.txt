@@ -117,9 +117,7 @@ if(CC_USE_METAL)
     file(GLOB metal_src
         "${CMAKE_CURRENT_SOURCE_DIR}/backend/gfx-metal/*.mm"
     )
-    foreach(_var ${metal_src})
-        list(APPEND ${gfx_src} ${_var})
-    endforeach()
+    list(APPEND gfx_src ${metal_src})
 endif()
 
 if(CC_USE_GLES3)
