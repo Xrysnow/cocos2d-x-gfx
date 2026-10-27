@@ -26,7 +26,7 @@
 
 #include "base/Macros.h"
 
-#if (CC_PLATFORM != CC_PLATFORM_MAC_IOS)
+#if (CC_PLATFORM != CC_PLATFORM_IOS && CC_PLATFORM != CC_PLATFORM_MACOS)
 	#include "glad/include/glad/egl.h"
 #endif
 
