@@ -98,9 +98,6 @@ bool CCVKGPUContext::initialize() {
     // only enable the absolute essentials
     ccstd::vector<const char *> requestedLayers{
         //"VK_LAYER_KHRONOS_synchronization2",
-#if CC_DEBUG > 0 && !FORCE_DISABLE_VALIDATION || FORCE_ENABLE_VALIDATION
-        "VK_LAYER_LUNARG_crash_diagnostic",
-#endif
     };
     ccstd::vector<const char *> requestedExtensions{
         VK_KHR_SURFACE_EXTENSION_NAME,
@@ -194,6 +191,9 @@ bool CCVKGPUContext::initialize() {
             break;
         }
     }
+    // Validate application calls before CDL instruments them. With SDK 1.4.357,
+    // placing validation below CDL can abort in CDL's queue cleanup on exit.
+    requestedLayers.push_back("VK_LAYER_LUNARG_crash_diagnostic");
 #endif
 
 #if CC_DEBUG > 0 && !FORCE_DISABLE_VALIDATION || FORCE_ENABLE_VALIDATION
