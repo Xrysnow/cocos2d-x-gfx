@@ -21,7 +21,7 @@ elseif(IOS)
     set(CC_USE_GLES2 OFF)
     set(CC_USE_METAL ON)
 elseif(MACOSX)
-    set(CC_USE_VULKAN ON)
+    set(CC_USE_VULKAN OFF)
     set(CC_USE_GLES3 OFF)
     set(CC_USE_GLES2 OFF)
     set(CC_USE_METAL ON)
@@ -118,6 +118,11 @@ if(CC_USE_METAL)
         "${CMAKE_CURRENT_SOURCE_DIR}/backend/gfx-metal/*.mm"
     )
     list(APPEND gfx_src ${metal_src})
+    if(MACOSX)
+        # The Metal backend uses explicit retain/release; do not inherit ARC.
+        set_property(SOURCE ${metal_src}
+            APPEND PROPERTY COMPILE_OPTIONS -fno-objc-arc)
+    endif()
 endif()
 
 if(CC_USE_GLES3)

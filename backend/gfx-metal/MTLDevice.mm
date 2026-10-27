@@ -46,6 +46,10 @@
 #import "profiler/Profiler.h"
 #import <thread>
 
+#if CC_PLATFORM == CC_PLATFORM_MACOS && __has_feature(objc_arc)
+#error "GFX Metal on macOS requires -fno-objc-arc"
+#endif
+
 namespace cc {
 namespace gfx {
 
@@ -72,11 +76,16 @@ CCMTLDevice::~CCMTLDevice() {
 }
 
 bool CCMTLDevice::doInit(const DeviceInfo &info) {
+    id<MTLDevice> mtlDevice = MTLCreateSystemDefaultDevice();
+    if (!mtlDevice) {
+        CC_LOG_ERROR("GFX Metal: MTLCreateSystemDefaultDevice returned nil");
+        return false;
+    }
+
     _gpuDeviceObj = ccnew CCMTLGPUDeviceObject;
 
     _currentFrameIndex = 0;
 
-    id<MTLDevice> mtlDevice = MTLCreateSystemDefaultDevice();
     _mtlDevice = mtlDevice;
 
     NSString *deviceName = [mtlDevice name];
