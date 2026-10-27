@@ -23,6 +23,8 @@
  THE SOFTWARE.
 ****************************************************************************/
 
+#include <algorithm>
+
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import "MTLBuffer.h"
@@ -272,7 +274,7 @@ void CCMTLCommandBuffer::beginRenderPass(RenderPass *renderPass, Framebuffer *fb
         updateDepthStencilState(ccMtlRenderPass->getCurrentSubpassIndex(), mtlRenderPassDescriptor);
     }
 
-    mtlRenderPassDescriptor.depthAttachment.clearDepth = clampf(depth, 0.0F, 1.0F);
+    mtlRenderPassDescriptor.depthAttachment.clearDepth = std::clamp(depth, 0.0F, 1.0F);
     mtlRenderPassDescriptor.stencilAttachment.clearStencil = stencil;
 
     auto *queryPool = static_cast<CCMTLQueryPool *>(_mtlDevice->getQueryPool());
