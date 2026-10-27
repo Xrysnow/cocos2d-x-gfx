@@ -89,6 +89,7 @@ public:
     inline CCMTLGPUCommandBufferObject *gpuCommandBufferObj() const { return _gpuCommandBufferObj; }
 
     void afterCommit();
+    void drainUnsubmitted();
 
     void signalFence();
     void waitFence();

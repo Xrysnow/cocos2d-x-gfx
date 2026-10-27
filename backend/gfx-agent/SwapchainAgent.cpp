@@ -57,6 +57,10 @@ void SwapchainAgent::doInit(const SwapchainInfo &info) {
 
     DeviceAgent::getInstance()->getMessageQueue()->kickAndWait();
 
+    if (!_actor->isSurfaceInitialized()) {
+        return;
+    }
+
     auto *colorTexture = ccnew TextureAgent(_actor->getColorTexture());
     colorTexture->renounceOwnership();
     _colorTexture = colorTexture;
@@ -88,6 +92,8 @@ void SwapchainAgent::doDestroy() {
         {
             actor->destroy();
         });
+    // Surface teardown must finish before its native view/layer is detached.
+    DeviceAgent::getInstance()->getMessageQueue()->kickAndWait();
 }
 
 void SwapchainAgent::doResize(uint32_t width, uint32_t height, SurfaceTransform transform) {
@@ -130,7 +136,17 @@ void SwapchainAgent::releaseFullScreenExclusiveMode() {
     mq->kickAndWait();
 }
 
+void SwapchainAgent::releaseAcquiredDrawable() {
+    auto *mq = DeviceAgent::getInstance()->getMessageQueue();
+    ENQUEUE_MESSAGE_1(
+        mq, SwapchainReleaseAcquiredDrawable,
+        actor, getActor(),
+        { actor->releaseAcquiredDrawable(); });
+    mq->kickAndWait();
+}
+
 void SwapchainAgent::setVSyncMode(VsyncMode mode) {
+    _vsyncMode = mode;
     auto *mq = DeviceAgent::getInstance()->getMessageQueue();
     // synchronous: the mode must be set on the actor before a following resize() rebuild
     ENQUEUE_MESSAGE_2(
@@ -143,11 +159,22 @@ void SwapchainAgent::setVSyncMode(VsyncMode mode) {
     mq->kickAndWait();
 }
 
+bool SwapchainAgent::isSurfaceInitialized() const {
+    return _actor->isSurfaceInitialized();
+}
+
+bool SwapchainAgent::hasAcquiredDrawable() const {
+    return _actor->hasAcquiredDrawable();
+}
+
 uint32_t SwapchainAgent::getGeneration() const {
     return _actor->getGeneration();
 }
 
 void SwapchainAgent::updateInfo() {
+    if (!_actor->isSurfaceInitialized() || !_colorTexture || !_depthStencilTexture) {
+        return;
+    }
     _generation = _actor->getGeneration();
     SwapchainTextureInfo textureInfo;
     textureInfo.swapchain = this;

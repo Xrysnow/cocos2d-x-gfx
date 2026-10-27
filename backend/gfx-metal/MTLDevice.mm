@@ -45,6 +45,7 @@
 #import "base/Log.h"
 #import "profiler/Profiler.h"
 #import <thread>
+#include <cstdlib>
 
 #if CC_PLATFORM == CC_PLATFORM_MACOS && __has_feature(objc_arc)
 #error "GFX Metal on macOS requires -fno-objc-arc"
@@ -68,10 +69,18 @@ CCMTLDevice::CCMTLDevice() {
     _caps.screenSpaceSignY = -1.0f;
     _caps.clipSpaceSignY = 1.0f;
 
+    _presentCompletionGroup = dispatch_group_create();
+    for (auto &group : _frameCompletionGroups) group = dispatch_group_create();
     CCMTLDevice::_instance = this;
 }
 
 CCMTLDevice::~CCMTLDevice() {
+    for (auto &group : _frameCompletionGroups) {
+        dispatch_release(group);
+        group = nullptr;
+    }
+    dispatch_release(_presentCompletionGroup);
+    _presentCompletionGroup = nullptr;
     CCMTLDevice::_instance = nullptr;
 }
 
@@ -181,11 +190,12 @@ bool CCMTLDevice::doInit(const DeviceInfo &info) {
 }
 
 void CCMTLDevice::doDestroy() {
+    waitForIdle();
     CC_SAFE_DELETE(_gpuDeviceObj);
 
     CC_SAFE_DESTROY_AND_DELETE(_queryPool)
-    CC_SAFE_DESTROY_AND_DELETE(_queue);
     CC_SAFE_DESTROY_AND_DELETE(_cmdBuff);
+    CC_SAFE_DESTROY_AND_DELETE(_queue);
 
     CCMTLGPUGarbageCollectionPool::getInstance()->flush();
 
@@ -198,6 +208,11 @@ void CCMTLDevice::doDestroy() {
 
     CCMTLTexture::deleteDefaultTexture();
     CCMTLSampler::deleteDefaultSampler();
+    // The helpers above may enqueue deferred releases after the first flush.
+    CCMTLGPUGarbageCollectionPool::getInstance()->flush();
+    [(id<MTLDevice>)_mtlDevice release];
+    _mtlDevice = nullptr;
+    _mtlCommandQueue = nullptr;
 
     CC_ASSERT(!_memoryStatus.bufferSize);  // Buffer memory leaked
     CC_ASSERT(!_memoryStatus.textureSize); // Texture memory leaked
@@ -210,10 +225,13 @@ void CCMTLDevice::frameSync() {
 }
 
 void CCMTLDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
+    // A frame slot is reusable only after its previous GPU completion callback
+    // has finished resetting staging storage and clearing deferred releases.
+    dispatch_group_wait(_frameCompletionGroups[_currentFrameIndex], DISPATCH_TIME_FOREVER);
     if (_onAcquire) _onAcquire->execute();
 
-    for (CCMTLSwapchain *swapchain : _swapchains) {
-        swapchain->acquire();
+    for (uint32_t i = 0; i < count; ++i) {
+        static_cast<CCMTLSwapchain *>(swapchains[i])->acquire();
     }
 
     // Clear queue stats
@@ -223,40 +241,85 @@ void CCMTLDevice::acquire(Swapchain *const *swapchains, uint32_t count) {
     queue->gpuQueueObj()->numTriangles = 0;
 }
 
+void CCMTLDevice::notifySubmitted(CCMTLCommandBuffer *commandBuffer) {
+    _pendingSubmissions.push_back(commandBuffer);
+}
+
+void CCMTLDevice::waitForIdle() {
+    if (!_queue) return;
+    @autoreleasepool {
+        // Finish a partially encoded/enqueued command buffer before placing a
+        // marker behind it, otherwise that marker could wait forever.
+        if (_cmdBuff) static_cast<CCMTLCommandBuffer *>(_cmdBuff)->drainUnsubmitted();
+        // Submitted work still owes its fence even if its drawable was lost.
+        if (!_pendingSubmissions.empty()) present();
+        auto *queue = static_cast<CCMTLQueue *>(_queue);
+        if (!queue->gpuQueueObj()) return;
+        id<MTLCommandBuffer> marker = [queue->gpuQueueObj()->mtlCommandQueue commandBuffer];
+        [marker commit];
+        [marker waitUntilCompleted];
+        // GPU completion alone does not establish that our CPU callbacks have
+        // finished touching staging pools and command-buffer semaphores.
+        dispatch_group_wait(_presentCompletionGroup, DISPATCH_TIME_FOREVER);
+    }
+}
+
 void CCMTLDevice::present() {
     CC_PROFILE(CCMTLDevicePresent);
-    CCMTLQueue *queue = (CCMTLQueue *)_queue;
-    _numDrawCalls = queue->gpuQueueObj()->numDrawCalls;
-    _numInstances = queue->gpuQueueObj()->numInstances;
-    _numTriangles = queue->gpuQueueObj()->numTriangles;
-
-    //hold this pointer before update _currentFrameIndex
-    auto tempIndex = _currentFrameIndex;
-    _currentBufferPoolId = _currentFrameIndex;
-    _currentFrameIndex = (_currentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
-
-    ccstd::vector<id<CAMetalDrawable>> releaseQ;
-    for (auto *swapchain : _swapchains) {
-        auto drawable = swapchain->currentDrawable();
-        if (drawable) {
-            releaseQ.push_back([drawable retain]);
-        }
-        swapchain->release();
+    if (_pendingSubmissions.empty()) {
+        // A canceled acquisition has never consumed an in-flight quota.
+        for (auto *swapchain : _swapchains) swapchain->release();
+        return;
     }
+    @autoreleasepool {
+        CCMTLQueue *queue = static_cast<CCMTLQueue *>(_queue);
+        _numDrawCalls = queue->gpuQueueObj()->numDrawCalls;
+        _numInstances = queue->gpuQueueObj()->numInstances;
+        _numTriangles = queue->gpuQueueObj()->numTriangles;
 
-    // present drawable
-    {
+        const auto tempIndex = _currentFrameIndex;
+        _currentBufferPoolId = _currentFrameIndex;
+        const auto nextIndex = (_currentFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+        ccstd::vector<CCMTLCommandBuffer *> submitted;
+        submitted.swap(_pendingSubmissions);
+        const auto presentCount = ++_presentCount;
+        bool trace = false;
+
+        bool dropDrawable = false;
+#if CC_DEBUG
+        const char *drop = std::getenv("LSTGX_P2_DROP_PRESENT_DRAWABLE");
+        dropDrawable = drop && drop[0] == '1';
+        const char *traceValue = std::getenv("LSTGX_P2_TRACE_METAL");
+        trace = traceValue && traceValue[0] == '1';
+#endif
         id<MTLCommandBuffer> cmdBuffer = [queue->gpuQueueObj()->mtlCommandQueue commandBuffer];
         [cmdBuffer enqueue];
-
-        for (auto drawable : releaseQ) {
-            [cmdBuffer presentDrawable:drawable];
-            [drawable release];
+        for (auto *swapchain : _swapchains) {
+            auto drawable = swapchain->currentDrawable();
+            if (drawable && !dropDrawable) [cmdBuffer presentDrawable:drawable];
+            // presentDrawable keeps its own reference until GPU completion.
+            swapchain->release();
         }
+        // Always submit this completion marker, including a nil-drawable frame.
+        dispatch_group_enter(_presentCompletionGroup);
+        dispatch_group_enter(_frameCompletionGroups[tempIndex]);
         [cmdBuffer addCompletedHandler:^(id<MTLCommandBuffer> commandBuffer) {
             onPresentCompleted(tempIndex);
+            for (auto *buffer : submitted) buffer->signalFence();
+            if (trace && (presentCount == 1 || presentCount == 120)) {
+                CC_LOG_INFO("P2 Metal present completed: frame=%llu submitted=%zu dropDrawable=%d status=%lu",
+                            static_cast<unsigned long long>(presentCount), submitted.size(), dropDrawable,
+                            static_cast<unsigned long>(commandBuffer.status));
+            }
+            dispatch_group_leave(_frameCompletionGroups[tempIndex]);
+            dispatch_group_leave(_presentCompletionGroup);
         }];
         [cmdBuffer commit];
+        // Publish the next slot only when it is safe. Uploads and resource
+        // destruction can occur between frames, including while zero B/hidden
+        // windows skip acquire entirely; waiting only in acquire is too late.
+        dispatch_group_wait(_frameCompletionGroups[nextIndex], DISPATCH_TIME_FOREVER);
+        _currentFrameIndex = nextIndex;
     }
 }
 
@@ -267,7 +330,6 @@ void CCMTLDevice::onPresentCompleted(uint32_t index) {
             bufferPool->reset();
             bufferPool->shrinkSize();
             CCMTLGPUGarbageCollectionPool::getInstance()->clear(index);
-            static_cast<CCMTLCommandBuffer*>(_cmdBuff)->signalFence();
         }
     }
 }

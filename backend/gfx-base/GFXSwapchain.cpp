@@ -23,6 +23,8 @@
 ****************************************************************************/
 
 #include "GFXSwapchain.h"
+#include "GFXDevice.h"
+#include <algorithm>
 
 namespace cc {
 namespace gfx {
@@ -31,7 +33,16 @@ Swapchain::Swapchain()
 : GFXObject(ObjectType::SWAPCHAIN) {
 }
 
-Swapchain::~Swapchain() = default;
+Swapchain::~Swapchain() {
+    detachOwner();
+}
+
+void Swapchain::detachOwner() {
+    if (!_owner) return;
+    auto &swapchains = _owner->_swapchains;
+    swapchains.erase(std::remove(swapchains.begin(), swapchains.end(), this), swapchains.end());
+    _owner = nullptr;
+}
 
 void Swapchain::initialize(const SwapchainInfo &info) {
 #if !defined(CC_SERVER_MODE)
@@ -47,6 +58,7 @@ void Swapchain::initialize(const SwapchainInfo &info) {
 
 void Swapchain::destroy() {
     doDestroy();
+    detachOwner();
 
     _windowHandle = nullptr;
     _windowId = 0;

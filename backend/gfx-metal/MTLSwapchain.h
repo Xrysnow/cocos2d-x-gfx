@@ -47,6 +47,10 @@ public:
     void acquire();
 
     void release();
+    void setVSyncMode(VsyncMode mode) override;
+    bool isSurfaceInitialized() const override { return _surfaceInitialized.load(); }
+    bool hasAcquiredDrawable() const override { return _drawableAcquired.load(); }
+    void releaseAcquiredDrawable() override;
 
 protected:
     void doInit(const SwapchainInfo &info) override;
@@ -57,6 +61,15 @@ protected:
 
 private:
     CCMTLGPUSwapChainObject *_gpuSwapchainObj = nullptr;
+    std::atomic<bool> _surfaceInitialized{false};
+    std::atomic<bool> _drawableAcquired{false};
+    bool _registered = false;
+    bool _trace = false;
+    bool _acquireLogged = false;
+    bool _lastAcquireResult = false;
+    uint64_t _acquireCount = 0;
+    uint32_t _nilDrawableBegin = 1;
+    uint32_t _nilDrawableCount = 0;
 };
 
 } // namespace gfx

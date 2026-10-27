@@ -71,20 +71,38 @@ void CCMTLCommandBuffer::doInit(const CommandBufferInfo &info) {
     _inFlightSem = ccnew CCMTLSemaphore(backBufferCount);
 }
 
+void CCMTLCommandBuffer::drainUnsubmitted() {
+    if (_gpuCommandBufferObj && _gpuCommandBufferObj->mtlCommandBuffer) {
+        // An enqueued but unsubmitted Metal command buffer would block the idle
+        // marker behind it. Finish its encoders and drain it without frame quota.
+        _renderEncoder.endEncoding();
+        _computeEncoder.endEncoding();
+        [_parallelEncoder endEncoding];
+        [_parallelEncoder release];
+        _parallelEncoder = nil;
+        // Secondary encoders borrow the primary Metal command buffer.
+        if (!_gpuCommandBufferObj->isSecondary) {
+            [_gpuCommandBufferObj->mtlCommandBuffer commit];
+            [_gpuCommandBufferObj->mtlCommandBuffer waitUntilCompleted];
+            [_gpuCommandBufferObj->mtlCommandBuffer release];
+        }
+        _gpuCommandBufferObj->mtlCommandBuffer = nil;
+    }
+    if (_gpuCommandBufferObj && _gpuCommandBufferObj->renderPass) {
+        _gpuCommandBufferObj->renderPass->reset();
+        _gpuCommandBufferObj->renderPass = nullptr;
+    }
+    _commandBufferBegan = false;
+}
+
 void CCMTLCommandBuffer::doDestroy() {
+    drainUnsubmitted();
+    if (_gpuCommandBufferObj && _mtlDevice) _mtlDevice->waitForIdle();
     CC_SAFE_DELETE(_texCopySemaphore);
 
     if(_inFlightSem) {
         _inFlightSem->syncAll();
         CC_SAFE_DELETE(_inFlightSem);
-    }
-
-    if (_commandBufferBegan) {
-        if (_gpuCommandBufferObj && _gpuCommandBufferObj->mtlCommandBuffer) {
-            [_gpuCommandBufferObj->mtlCommandBuffer commit];
-            [_gpuCommandBufferObj->mtlCommandBuffer release];
-        }
-        _commandBufferBegan = false;
     }
 
     _GPUDescriptorSets.clear();
@@ -351,6 +369,7 @@ void CCMTLCommandBuffer::afterCommit() {
         _gpuCommandBufferObj->mtlCommandBuffer = nil;
     }
     _inFlightSem->wait();
+    _mtlDevice->notifySubmitted(this);
 }
 
 void CCMTLCommandBuffer::updateDepthStencilState(uint32_t index, MTLRenderPassDescriptor *descriptor) {

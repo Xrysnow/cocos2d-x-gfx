@@ -50,6 +50,8 @@ namespace cc {
 namespace gfx {
 
 class CC_DLL Device : public RefCounted {
+    friend class Swapchain;
+
 public:
     static Device *getInstance();
 
@@ -238,7 +240,10 @@ QueryPool *Device::createQueryPool(const QueryPoolInfo &info) {
 Swapchain *Device::createSwapchain(const SwapchainInfo &info) {
     Swapchain *res = createSwapchain();
     res->initialize(info);
-    _swapchains.push_back(res);
+    if (res->isSurfaceInitialized()) {
+        res->_owner = this;
+        _swapchains.push_back(res);
+    }
     return res;
 }
 

@@ -52,6 +52,8 @@ Device::Device() {
 }
 
 Device::~Device() {
+    for (auto *swapchain : _swapchains) swapchain->_owner = nullptr;
+    _swapchains.clear();
     Device::instance = nullptr;
     CC_SAFE_RELEASE(_cmdBuff);
     CC_SAFE_RELEASE(_queue);

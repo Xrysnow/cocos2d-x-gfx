@@ -25,153 +25,256 @@
 
 #import "../gfx-base/GFXDef-common.h"
 #import "MTLSwapchain.h"
-#if CC_PLATFORM == CC_PLATFORM_MACOS
-    #import <AppKit/NSView.h>
-#else
+#if CC_PLATFORM != CC_PLATFORM_MACOS
     #import <UIKit/UIView.h>
 #endif
-
 #import "MTLGPUObjects.h"
 #import "MTLDevice.h"
-#import "MTLGPUObjects.h"
+#import "base/Log.h"
+#include <cstdlib>
+
+#if CC_PLATFORM == CC_PLATFORM_MACOS && __has_feature(objc_arc)
+#error "GFX Metal on macOS requires -fno-objc-arc"
+#endif
+
 namespace cc {
 namespace gfx {
-
 namespace {
-#if CC_PLATFORM == CC_PLATFORM_MACOS
-using CCView = NSView;
-#else
-using CCView = UIView;
+uint32_t diagnosticCount(const char *name, uint32_t fallback = 0) {
+#if CC_DEBUG
+    const char *value = std::getenv(name);
+    if (value && *value) {
+        char *end = nullptr;
+        const auto count = std::strtoul(value, &end, 10);
+        if (end != value && !*end && count <= UINT32_MAX) {
+            return static_cast<uint32_t>(count);
+        }
+    }
 #endif
-}; // namespace
-
-CCMTLSwapchain::CCMTLSwapchain() {
+    return fallback;
 }
+} // namespace
+
+CCMTLSwapchain::CCMTLSwapchain() = default;
 
 CCMTLSwapchain::~CCMTLSwapchain() {
     destroy();
 }
 
-void CCMTLSwapchain::doInit(const SwapchainInfo& info) {
-    _gpuSwapchainObj = ccnew CCMTLGPUSwapChainObject;
-
-    //----------------------acquire layer-----------------------------------
-#if CC_EDITOR
-    CAMetalLayer* layer = (CAMetalLayer*)info.windowHandle;
-    if (!layer.device) {
-        layer.device = MTLCreateSystemDefaultDevice();
+void CCMTLSwapchain::doInit(const SwapchainInfo &info) {
+    _trace = diagnosticCount("LSTGX_P2_TRACE_METAL") != 0;
+    _nilDrawableBegin = diagnosticCount("LSTGX_P2_NIL_DRAWABLE_BEGIN", 1);
+    _nilDrawableCount = diagnosticCount("LSTGX_P2_NIL_DRAWABLE_COUNT");
+    if (diagnosticCount("LSTGX_P2_FAIL_SURFACE")) {
+        CC_LOG_ERROR("GFX Metal: injected surface initialization failure");
+        return;
     }
-#else
-    auto *view = (CCView *)info.windowHandle;
-    CAMetalLayer *layer = static_cast<CAMetalLayer *>(view.layer);
-#endif
-
-    if (layer.pixelFormat == MTLPixelFormatInvalid) {
-        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    if (!info.width || !info.height) {
+        CC_LOG_ERROR("GFX Metal: swapchain requires positive framebuffer dimensions");
+        return;
     }
-    layer.framebufferOnly = NO;
-    //setDisplaySyncEnabled : physic device refresh rate.
-    //setPresentsWithTransaction : Core Animation transactions update rate.
-    auto syncModeFunc = [&](BOOL sync, BOOL transaction) {
+
+    CAMetalLayer *layer = nil;
 #if CC_PLATFORM == CC_PLATFORM_MACOS
-        [layer setDisplaySyncEnabled:sync];
+    // AppKit views must only be accessed on the main thread. The bridge resolves
+    // this layer before any DeviceAgent message can run on the device thread.
+    layer = static_cast<CAMetalLayer *>(info.nativeRenderSurface);
+#elif CC_EDITOR
+    layer = static_cast<CAMetalLayer *>(info.windowHandle);
+#else
+    layer = static_cast<CAMetalLayer *>(static_cast<UIView *>(info.windowHandle).layer);
 #endif
-        [layer setPresentsWithTransaction:transaction];
-    };
-    switch (_vsyncMode) {
-        case VsyncMode::OFF:
-            syncModeFunc(NO, NO);
-            break;
-        case VsyncMode::ON:
-            syncModeFunc(YES, YES);
-        case VsyncMode::RELAXED:
-        case VsyncMode::MAILBOX:
-        case VsyncMode::HALF:
-            syncModeFunc(YES, NO);
-        default:
-            break;
+    auto *device = CCMTLDevice::getInstance();
+    id<MTLDevice> mtlDevice = device ? static_cast<id<MTLDevice>>(device->getMTLDevice()) : nil;
+    if (![layer isKindOfClass:[CAMetalLayer class]] || !mtlDevice) {
+        CC_LOG_ERROR("GFX Metal: missing CAMetalLayer or actual Metal device");
+        return;
     }
-    _gpuSwapchainObj->mtlLayer = layer;
+    if (layer.device && layer.device != mtlDevice) {
+        CC_LOG_ERROR("GFX Metal: surface belongs to a different Metal device");
+        return;
+    }
+    if (layer.pixelFormat != MTLPixelFormatInvalid && layer.pixelFormat != MTLPixelFormatBGRA8Unorm) {
+        CC_LOG_ERROR("GFX Metal: surface pixel format must be BGRA8Unorm");
+        return;
+    }
 
-    //    MTLPixelFormatBGRA8Unorm
-    //    MTLPixelFormatBGRA8Unorm_sRGB
-    //    MTLPixelFormatRGBA16Float
-    //    MTLPixelFormatRGB10A2Unorm (macOS only)
-    //    MTLPixelFormatBGR10A2Unorm (macOS only)
-    //    MTLPixelFormatBGRA10_XR
-    //    MTLPixelFormatBGRA10_XR_sRGB
-    //    MTLPixelFormatBGR10_XR
-    //    MTLPixelFormatBGR10_XR_sRGB
-    Format colorFmt = Format::BGRA8;
-    Format depthStencilFmt = Format::DEPTH_STENCIL;
+    _gpuSwapchainObj = ccnew CCMTLGPUSwapChainObject;
+    _gpuSwapchainObj->mtlLayer = [layer retain];
+    layer.device = mtlDevice;
+    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    layer.framebufferOnly = NO;
+    layer.drawableSize = CGSizeMake(info.width, info.height);
+    if (@available(macOS 10.13, iOS 11.0, *)) {
+        layer.allowsNextDrawableTimeout = YES;
+    }
+    setVSyncMode(_vsyncMode);
 
     _colorTexture = ccnew CCMTLTexture;
     _depthStencilTexture = ccnew CCMTLTexture;
-
     SwapchainTextureInfo textureInfo;
     textureInfo.swapchain = this;
-    textureInfo.format = colorFmt;
+    textureInfo.format = Format::BGRA8;
     textureInfo.width = info.width;
     textureInfo.height = info.height;
     initTexture(textureInfo, _colorTexture);
-
-    textureInfo.format = depthStencilFmt;
+    textureInfo.format = Format::DEPTH_STENCIL;
     initTexture(textureInfo, _depthStencilTexture);
+    if (!depthStencilTexture()->getMTLTexture()) {
+        CC_LOG_ERROR("GFX Metal: failed to allocate swapchain depth/stencil attachment");
+        doDestroy();
+        return;
+    }
 
-    CCMTLDevice::getInstance()->registerSwapchain(this);
+    device->registerSwapchain(this);
+    _registered = true;
+    _surfaceInitialized.store(true);
+    if (_trace) {
+        CC_LOG_INFO("P2 Metal surface: layer=%p device=%p B=%ux%u format=%lu timeout=1",
+                    layer, mtlDevice, info.width, info.height, static_cast<unsigned long>(layer.pixelFormat));
+    }
+}
+
+void CCMTLSwapchain::setVSyncMode(VsyncMode mode) {
+    _vsyncMode = mode;
+    if (!_gpuSwapchainObj || !_gpuSwapchainObj->mtlLayer) return;
+    auto *layer = _gpuSwapchainObj->mtlLayer;
+    // Presentation is driven by the Metal queue, including on DeviceAgent's
+    // thread, rather than by an AppKit/Core Animation transaction.
+    layer.presentsWithTransaction = NO;
+#if CC_PLATFORM == CC_PLATFORM_MACOS
+    switch (mode) {
+        case VsyncMode::OFF:
+            layer.displaySyncEnabled = NO;
+            break;
+        case VsyncMode::ON:
+        case VsyncMode::RELAXED:
+        case VsyncMode::MAILBOX:
+        case VsyncMode::HALF:
+            layer.displaySyncEnabled = YES;
+            break;
+        default:
+            layer.displaySyncEnabled = YES;
+            break;
+    }
+    if (_trace) {
+        CC_LOG_INFO("P2 Metal vsync: requested=%u displaySyncEnabled=%d presentsWithTransaction=%d",
+                    static_cast<unsigned>(mode), layer.displaySyncEnabled, layer.presentsWithTransaction);
+    }
+#endif
 }
 
 void CCMTLSwapchain::doDestroy() {
-    CCMTLDevice::getInstance()->unRegisterSwapchain(this);
-    if (_gpuSwapchainObj) {
-        _gpuSwapchainObj->currentDrawable = nil;
-        _gpuSwapchainObj->mtlLayer = nil;
-
-        CC_SAFE_DELETE(_gpuSwapchainObj);
-    }
-
+    _surfaceInitialized.store(false);
+    if (!_gpuSwapchainObj) return;
+    auto *device = CCMTLDevice::getInstance();
+    if (device) device->waitForIdle();
+    if (_registered && device) device->unRegisterSwapchain(this);
+    _registered = false;
+    release();
     CC_SAFE_DESTROY_NULL(_colorTexture);
     CC_SAFE_DESTROY_NULL(_depthStencilTexture);
+    [_gpuSwapchainObj->mtlLayer release];
+    _gpuSwapchainObj->mtlLayer = nil;
+    CC_SAFE_DELETE(_gpuSwapchainObj);
+    if (_trace) CC_LOG_INFO("P2 Metal surface destroyed: drawable=0 layer=0 registered=0");
 }
 
 void CCMTLSwapchain::doDestroySurface() {
-    if (_gpuSwapchainObj) {
-        _gpuSwapchainObj->currentDrawable = nil;
-        _gpuSwapchainObj->mtlLayer = nil;
-    }
+    if (!_gpuSwapchainObj) return;
+    CCMTLDevice::getInstance()->waitForIdle();
+    release();
+    _surfaceInitialized.store(false);
+    [_gpuSwapchainObj->mtlLayer release];
+    _gpuSwapchainObj->mtlLayer = nil;
 }
 
 void CCMTLSwapchain::doResize(uint32_t width, uint32_t height, SurfaceTransform /*transform*/) {
-    _colorTexture->resize(width, height);
+    if (!isSurfaceInitialized() || !width || !height) return;
+    CCMTLDevice::getInstance()->waitForIdle();
+    release();
+    const auto oldWidth = getWidth();
+    const auto oldHeight = getHeight();
     _depthStencilTexture->resize(width, height);
+    auto depth = depthStencilTexture()->getMTLTexture();
+    if (!depth || depth.width != width || depth.height != height) {
+        // Texture::resize publishes its requested size even if allocation failed.
+        // Keep the old dimensions visible so a later frame can safely retry.
+        SwapchainTextureInfo info;
+        info.swapchain = this;
+        info.format = Format::DEPTH_STENCIL;
+        info.width = oldWidth;
+        info.height = oldHeight;
+        updateTextureInfo(info, _depthStencilTexture);
+        CC_LOG_ERROR("GFX Metal: failed to resize depth/stencil attachment");
+        return;
+    }
+    _colorTexture->resize(width, height);
+    _gpuSwapchainObj->mtlLayer.drawableSize = CGSizeMake(width, height);
+    ++_generation;
 }
 
-CCMTLTexture* CCMTLSwapchain::colorTexture() {
-    return static_cast<CCMTLTexture*>(_colorTexture.get());
+CCMTLTexture *CCMTLSwapchain::colorTexture() {
+    return static_cast<CCMTLTexture *>(_colorTexture.get());
 }
 
-CCMTLTexture* CCMTLSwapchain::depthStencilTexture() {
-    return static_cast<CCMTLTexture*>(_depthStencilTexture.get());
+CCMTLTexture *CCMTLSwapchain::depthStencilTexture() {
+    return static_cast<CCMTLTexture *>(_depthStencilTexture.get());
 }
 
 id<CAMetalDrawable> CCMTLSwapchain::currentDrawable() {
-    return _gpuSwapchainObj->currentDrawable;
+    return _gpuSwapchainObj ? _gpuSwapchainObj->currentDrawable : nil;
 }
 
 void CCMTLSwapchain::release() {
+    _drawableAcquired.store(false);
+    if (!_gpuSwapchainObj) return;
+    auto drawable = _gpuSwapchainObj->currentDrawable;
     _gpuSwapchainObj->currentDrawable = nil;
-    static_cast<CCMTLTexture*>(_colorTexture.get())->update();
+    if (_colorTexture) colorTexture()->update();
+    [drawable release];
+}
+
+void CCMTLSwapchain::releaseAcquiredDrawable() {
+    release();
 }
 
 void CCMTLSwapchain::acquire() {
-    // hang on here if next drawable not available
-    while (!_gpuSwapchainObj->currentDrawable) {
-        _gpuSwapchainObj->currentDrawable = [_gpuSwapchainObj->mtlLayer nextDrawable];
-        static_cast<CCMTLTexture*>(_colorTexture.get())->update();
+    // A previous unsubmitted acquisition must not be reused by the next frame.
+    release();
+    if (!isSurfaceInitialized()) return;
+    ++_acquireCount;
+    const bool injectNil = _acquireCount >= _nilDrawableBegin &&
+                          _acquireCount - _nilDrawableBegin < _nilDrawableCount;
+    @autoreleasepool {
+        // Exactly one attempt per frame. allowsNextDrawableTimeout permits nil;
+        // no retry loop can prevent event processing and window restoration.
+        if (!injectNil) {
+            _gpuSwapchainObj->currentDrawable = [[_gpuSwapchainObj->mtlLayer nextDrawable] retain];
+        }
+        auto texture = [currentDrawable() texture];
+        auto depth = depthStencilTexture()->getMTLTexture();
+        if (texture && depth && texture.width == getWidth() && texture.height == getHeight() &&
+            depth.width == getWidth() && depth.height == getHeight() &&
+            texture.pixelFormat == MTLPixelFormatBGRA8Unorm &&
+            texture.device == _gpuSwapchainObj->mtlLayer.device) {
+            colorTexture()->update();
+            _drawableAcquired.store(true);
+        } else {
+            release();
+        }
     }
+    const bool acquired = hasAcquiredDrawable();
+    if (_trace && (!_acquireLogged || acquired != _lastAcquireResult)) {
+        CC_LOG_INFO("P2 Metal acquire: attempt=%llu drawable=%d injected=%d B=%ux%u",
+                    static_cast<unsigned long long>(_acquireCount), acquired, injectNil, getWidth(), getHeight());
+    }
+    _acquireLogged = true;
+    _lastAcquireResult = acquired;
 }
 
-void CCMTLSwapchain::doCreateSurface(void* windowHandle) {
+void CCMTLSwapchain::doCreateSurface(void * /*windowHandle*/) {
+    CC_LOG_ERROR("GFX Metal: replace a native surface by recreating the swapchain with SwapchainInfo");
 }
 
 } // namespace gfx

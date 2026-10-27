@@ -41,6 +41,9 @@ public:
     void setVSyncMode(VsyncMode mode) override;
 
     uint32_t getGeneration() const override;
+    bool isSurfaceInitialized() const override;
+    bool hasAcquiredDrawable() const override;
+    void releaseAcquiredDrawable() override;
 
     inline bool isInited() const { return _inited; }
 

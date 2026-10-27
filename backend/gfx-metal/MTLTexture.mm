@@ -234,9 +234,14 @@ void CCMTLTexture::doDestroy() {
     }
 
     if (_swapchain) {
+        // Only the color attachment borrows a drawable texture. Swapchain depth
+        // storage was created with newTextureWithDescriptor and is owned here.
+        const bool ownsDepth = GFX_FORMAT_INFOS[toNumber(_info.format)].hasDepth;
         _swapchain = nullptr;
-        _mtlTexture = nil;
-        return;
+        if (!ownsDepth) {
+            _mtlTexture = nil;
+            return;
+        }
     }
 
     id<MTLTexture> mtlTexure = nil;
@@ -260,6 +265,12 @@ void CCMTLTexture::doDestroy() {
 }
 
 void CCMTLTexture::doResize(uint32_t width, uint32_t height, uint32_t size) {
+    if (_swapchain && !GFX_FORMAT_INFOS[toNumber(_info.format)].hasDepth) {
+        // The color texture is supplied by the next drawable, never allocated or
+        // released by this wrapper. Texture::resize updates its dimensions.
+        _mtlTexture = nil;
+        return;
+    }
     if (_isTextureView) {
         CC_LOG_ERROR("TextureView does not support resize! at %p", this);
         return;

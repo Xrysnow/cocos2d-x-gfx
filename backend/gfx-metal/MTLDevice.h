@@ -26,6 +26,7 @@
 
 #import "MTLConfig.h"
 #import "gfx-base/GFXDevice.h"
+#include <dispatch/dispatch.h>
 
 namespace cc {
 namespace gfx {
@@ -35,6 +36,7 @@ struct CCMTLGPUDeviceObject;
 class CCMTLGPUStagingBufferPool;
 class CCMTLSemaphore;
 class CCMTLSwapchain;
+class CCMTLCommandBuffer;
 
 class CCMTLDevice final : public Device {
 public:
@@ -69,6 +71,9 @@ public:
     void present() override;
 
     void onPresentCompleted(uint32_t index);
+    void notifySubmitted(CCMTLCommandBuffer *commandBuffer);
+    // Device-thread-only barrier. Never calls AppKit or waits for the main thread.
+    void waitForIdle();
 
     inline void *getMTLCommandQueue() const { return _mtlCommandQueue; }
     inline void *getMTLDevice() const { return _mtlDevice; }
@@ -136,6 +141,10 @@ protected:
     CC_UNUSED uint32_t _memoryAlarmListenerId = 0;
 
     ccstd::vector<CCMTLSwapchain *> _swapchains;
+    ccstd::vector<CCMTLCommandBuffer *> _pendingSubmissions;
+    uint64_t _presentCount = 0;
+    dispatch_group_t _presentCompletionGroup = nullptr;
+    dispatch_group_t _frameCompletionGroups[MAX_FRAMES_IN_FLIGHT] = {nullptr};
 
     CCMTLGPUDeviceObject *_gpuDeviceObj = nullptr;
 };

@@ -50,6 +50,10 @@ void SwapchainValidator::doInit(const SwapchainInfo &info) {
 
     _actor->initialize(info);
 
+    if (!_actor->isSurfaceInitialized()) {
+        return;
+    }
+
     auto *colorTexture = ccnew TextureValidator(_actor->getColorTexture());
     colorTexture->renounceOwnership();
     _colorTexture = colorTexture;
@@ -84,11 +88,22 @@ void SwapchainValidator::doDestroy() {
     _actor->destroy();
 }
 
+bool SwapchainValidator::isSurfaceInitialized() const {
+    return _actor->isSurfaceInitialized();
+}
+
+bool SwapchainValidator::hasAcquiredDrawable() const {
+    return _actor->hasAcquiredDrawable();
+}
+
 uint32_t SwapchainValidator::getGeneration() const {
     return _actor->getGeneration();
 }
 
 void SwapchainValidator::updateInfo() {
+    if (!_actor->isSurfaceInitialized() || !_colorTexture || !_depthStencilTexture) {
+        return;
+    }
     _generation = _actor->getGeneration();
     SwapchainTextureInfo textureInfo;
     textureInfo.swapchain = this;
@@ -137,7 +152,12 @@ void SwapchainValidator::releaseFullScreenExclusiveMode() {
     _actor->releaseFullScreenExclusiveMode();
 }
 
+void SwapchainValidator::releaseAcquiredDrawable() {
+    _actor->releaseAcquiredDrawable();
+}
+
 void SwapchainValidator::setVSyncMode(VsyncMode mode) {
+    _vsyncMode = mode;
     CC_ASSERT(isInited());
 
     _actor->setVSyncMode(mode);

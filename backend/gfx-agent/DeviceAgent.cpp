@@ -140,6 +140,11 @@ void DeviceAgent::acquire(Swapchain *const *swapchains, uint32_t count) {
             if (device->_onAcquire) device->_onAcquire->execute();
             actor->acquire(swapchains, count);
         });
+    // Metal acquisition can fail for a frame. Publish that result before the
+    // caller chooses whether to begin encoding; no AppKit calls run on the actor.
+    if (_api == API::METAL) {
+        _mainMessageQueue->kickAndWait();
+    }
 }
 
 void DeviceAgent::present() {

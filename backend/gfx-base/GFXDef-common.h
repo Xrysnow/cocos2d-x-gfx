@@ -1036,6 +1036,10 @@ struct SwapchainInfo {
     uint32_t width{0};
     uint32_t height{0};
 
+    // Optional pre-resolved native surface. macOS Metal consumes CAMetalLayer*,
+    // allowing the device thread to avoid reading AppKit views. Borrowed during init.
+    void *nativeRenderSurface{nullptr};
+
     EXPOSE_COPY_FN(SwapchainInfo)
 };
 

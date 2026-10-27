@@ -115,6 +115,23 @@ void CCMTLRenderPass::doInit(const RenderPassInfo& info) {
     }
 }
 
+void CCMTLRenderPass::reset() {
+    _currentSubpassIndex = 0;
+    // The encoder owns the resources it uses. Cached descriptors must not keep
+    // the last frame's drawable/depth attachments alive after surface shutdown.
+    // Metal render-pass descriptor arrays have eight color slots (0 through 7).
+    constexpr uint32_t metalColorAttachmentCount = 8;
+    for (uint32_t i = 0; i < metalColorAttachmentCount; ++i) {
+        _mtlRenderPassDescriptor.colorAttachments[i].texture = nil;
+        _mtlRenderPassDescriptor.colorAttachments[i].resolveTexture = nil;
+    }
+    _mtlRenderPassDescriptor.depthAttachment.texture = nil;
+    _mtlRenderPassDescriptor.depthAttachment.resolveTexture = nil;
+    _mtlRenderPassDescriptor.stencilAttachment.texture = nil;
+    _mtlRenderPassDescriptor.stencilAttachment.resolveTexture = nil;
+    _mtlRenderPassDescriptor.visibilityResultBuffer = nil;
+}
+
 void CCMTLRenderPass::doDestroy() {
     if (_mtlRenderPassDescriptor) {
         [_mtlRenderPassDescriptor release];

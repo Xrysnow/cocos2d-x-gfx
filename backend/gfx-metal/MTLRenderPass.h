@@ -51,7 +51,7 @@ public:
     inline const ccstd::vector<cocos2d::Vec2> &getRenderTargetSizes() const { return _renderTargetSizes; }
     inline void nextSubpass() { _currentSubpassIndex++; }
     inline uint32_t getCurrentSubpassIndex() { return _currentSubpassIndex; }
-    inline void reset() { _currentSubpassIndex = 0; }
+    void reset();
     inline const BufferList &getDrawBuffer(uint32_t subPassIndex) { return _drawBuffers[subPassIndex]; }
     inline const BufferList &getReadBuffer(uint32_t subPassIndex) { return _readBuffers[subPassIndex]; }
 

@@ -32,6 +32,8 @@
 namespace cc {
 namespace gfx {
 
+class Device;
+
 class CC_DLL Swapchain : public GFXObject {
 public:
     Swapchain();
@@ -72,7 +74,17 @@ public:
     inline uint32_t getHeight() const { return _colorTexture->getHeight(); }
     virtual uint32_t getGeneration() const { return _generation; }
 
+    // Backends with fallible drawable acquisition override these. Existing backends
+    // retain their previous behavior. Query acquire results only after device sync.
+    virtual bool isSurfaceInitialized() const { return true; }
+    virtual bool hasAcquiredDrawable() const { return true; }
+    virtual void releaseAcquiredDrawable() {}
+
 protected:
+    friend class Device;
+    void detachOwner();
+    Device *_owner{nullptr}; // non-owning registration in the creating facade
+
     virtual void doInit(const SwapchainInfo &info) = 0;
     virtual void doDestroy() = 0;
     virtual void doResize(uint32_t width, uint32_t height, SurfaceTransform transform) = 0;
