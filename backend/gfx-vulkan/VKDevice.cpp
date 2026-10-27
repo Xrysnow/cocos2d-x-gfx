@@ -503,6 +503,10 @@ bool CCVKDevice::doInit(const DeviceInfo & /*info*/) {
 
 void CCVKDevice::doDestroy() {
     waitAllFences();
+    if (_gpuDevice && _gpuDevice->vkDevice != VK_NULL_HANDLE) {
+        // Present operations may outlive the last submitted frame's fence.
+        VK_CHECK(vkDeviceWaitIdle(_gpuDevice->vkDevice));
+    }
 
     SPIRVUtils::getInstance()->destroy();
 

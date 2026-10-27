@@ -503,6 +503,11 @@ void CCVKSwapchain::recordInitialTransition(uint32_t imageIndex) {
 
 void CCVKSwapchain::destroySwapchain(CCVKGPUDevice *gpuDevice, bool defer) {
     if (_gpuSwapchain->vkSwapchain != VK_NULL_HANDLE) {
+        if (!defer && gpuDevice->vkDevice != VK_NULL_HANDLE) {
+            // Submit fences do not cover the queue's subsequent presentation.
+            // Drain it before destroying the swapchain and its present semaphores.
+            VK_CHECK(vkDeviceWaitIdle(gpuDevice->vkDevice));
+        }
         _gpuSwapchain->swapchainImages.clear();
 
         // note: keep fullScreenExclusiveRequested, the new swapchain will re-acquire it
