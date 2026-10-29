@@ -41,7 +41,7 @@ namespace cc {
 namespace gfx {
 namespace {
 uint32_t diagnosticCount(const char *name, uint32_t fallback = 0) {
-#if CC_DEBUG
+#if CC_DEBUG > 0
     const char *value = std::getenv(name);
     if (value && *value) {
         char *end = nullptr;
@@ -62,10 +62,10 @@ CCMTLSwapchain::~CCMTLSwapchain() {
 }
 
 void CCMTLSwapchain::doInit(const SwapchainInfo &info) {
-    _trace = diagnosticCount("LSTGX_P2_TRACE_METAL") != 0;
-    _nilDrawableBegin = diagnosticCount("LSTGX_P2_NIL_DRAWABLE_BEGIN", 1);
-    _nilDrawableCount = diagnosticCount("LSTGX_P2_NIL_DRAWABLE_COUNT");
-    if (diagnosticCount("LSTGX_P2_FAIL_SURFACE")) {
+    _trace = diagnosticCount("CC_P2_TRACE_METAL") != 0;
+    _nilDrawableBegin = diagnosticCount("CC_P2_NIL_DRAWABLE_BEGIN", 1);
+    _nilDrawableCount = diagnosticCount("CC_P2_NIL_DRAWABLE_COUNT");
+    if (diagnosticCount("CC_P2_FAIL_SURFACE")) {
         CC_LOG_ERROR("GFX Metal: injected surface initialization failure");
         return;
     }

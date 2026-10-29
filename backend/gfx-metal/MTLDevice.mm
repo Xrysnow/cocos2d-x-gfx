@@ -286,10 +286,10 @@ void CCMTLDevice::present() {
         bool trace = false;
 
         bool dropDrawable = false;
-#if CC_DEBUG
-        const char *drop = std::getenv("LSTGX_P2_DROP_PRESENT_DRAWABLE");
+#if CC_DEBUG > 0
+        const char *drop = std::getenv("CC_P2_DROP_PRESENT_DRAWABLE");
         dropDrawable = drop && drop[0] == '1';
-        const char *traceValue = std::getenv("LSTGX_P2_TRACE_METAL");
+        const char *traceValue = std::getenv("CC_P2_TRACE_METAL");
         trace = traceValue && traceValue[0] == '1';
 #endif
         id<MTLCommandBuffer> cmdBuffer = [queue->gpuQueueObj()->mtlCommandQueue commandBuffer];
